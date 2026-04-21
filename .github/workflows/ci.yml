@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.11.4
+      - run: ruff check .
+      - run: ruff format --check .
+
+  build:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          target: runtime
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build browser-worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./browser-worker
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  health-check:
+    name: Health check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy env file
+        run: cp .env.example .env
+      - name: Boot services
+        run: docker compose up -d --build --wait
+        timeout-minutes: 10
+      - name: Check backend /health
+        run: curl -sf http://localhost:8000/health | grep '"ok"'
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
