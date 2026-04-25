@@ -57,3 +57,37 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  schema-diff:
+    name: Schema diff
+    runs-on: ubuntu-latest
+    # Only runs when Supabase secrets are configured in GitHub
+    if: ${{ vars.SUPABASE_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Check for schema drift
+        run: supabase db diff --project-ref "$SUPABASE_PROJECT_REF" --linked
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+
+  integration-test:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    # Only runs when Supabase secrets are configured in GitHub
+    if: ${{ vars.SUPABASE_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Run schema integration tests
+        run: pytest backend/tests/test_schema.py -v
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
