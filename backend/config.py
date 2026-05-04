@@ -1,0 +1,60 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    # Anthropic
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-6"
+
+    # Langfuse (optional — disabled when keys are blank)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = ""
+
+    # Supabase
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+    supabase_storage_bucket: str = "property-images"
+
+    # Cloudflare Access
+    cloudflare_access_team_domain: str = ""
+    cloudflare_access_aud: str = ""
+
+    # Schedule
+    schedule_day_of_week: str = "thu"
+    schedule_hour: int = 17
+    schedule_timezone: str = "Europe/Madrid"
+
+    # Budget
+    daily_cost_cap_usd: float = 5.00
+
+    # Browser worker (internal Docker service)
+    browser_worker_url: str = "http://browser-worker:8001"
+
+    # App
+    frontend_url: str = ""
+    cors_origins: str = "http://localhost:5173"
+    log_level: str = "INFO"
+    publish_mode: str = "shadow"  # shadow | live
+
+    # Set AUTH_DISABLED=true to skip CF JWT verification in local dev
+    auth_disabled: bool = False
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",")]
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
