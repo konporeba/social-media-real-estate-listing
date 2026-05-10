@@ -1,18 +1,18 @@
 """FastAPI application — SSE hub, REST endpoints, middleware wiring."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import socket
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 import structlog
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -22,6 +22,57 @@ from log_setup import configure_logging, init_langfuse
 from models import ApproveRunRequest, RetryPublishRequest, RunDetail, StartRunRequest
 
 log = structlog.get_logger()
+
+
+# ── Stuck-review watcher ──────────────────────────────────────────────────────
+
+
+async def _stuck_review_watcher() -> None:
+    """Background task: send one alert per run that sits in awaiting_review > 24 h."""
+    from datetime import timedelta
+
+    _alerted: set[str] = set()
+
+    while True:
+        await asyncio.sleep(3600)  # check every hour
+        try:
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(hours=24)
+            ).isoformat()
+
+            def _query() -> list[dict]:
+                from db.client import get_client
+
+                return (
+                    get_client()
+                    .table("runs")
+                    .select("id, property_url, updated_at")
+                    .eq("status", "awaiting_review")
+                    .lt("updated_at", cutoff)
+                    .execute()
+                    .data
+                )
+
+            stuck = await asyncio.to_thread(_query)
+            for run in stuck:
+                run_id = run["id"]
+                if run_id in _alerted:
+                    continue
+                from tools.gmail import send_alert
+
+                await send_alert(
+                    f"[Social Agent] Run stuck in review — {run_id[:8]}",
+                    f"Run {run_id} has been waiting for human review since "
+                    f"{run['updated_at']}.\n\n"
+                    f"Property: {run.get('property_url') or 'unknown'}\n\n"
+                    "Please approve or reject it in the dashboard.",
+                )
+                _alerted.add(run_id)
+                log.warning("stuck_review_alert_sent", run_id=run_id)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            log.error("stuck_review_watcher_error", error=str(exc))
 
 
 # ── SSE Hub ───────────────────────────────────────────────────────────────────
@@ -103,16 +154,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _stop_event = asyncio.Event()
     _worker_task = asyncio.create_task(run_trigger_worker(_stop_event, orchestrator))
 
+    # Stuck-review watcher — sends an alert once per run stuck > 24 h
+    _watcher_task = asyncio.create_task(_stuck_review_watcher())
+
     log.info("startup_complete")
     try:
         yield
     finally:
         _stop_event.set()
+        _watcher_task.cancel()
         try:
             await asyncio.wait_for(_worker_task, timeout=10.0)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             _worker_task.cancel()
         scheduler.shutdown(wait=False)
+        # Flush any pending Langfuse events before the process exits
+        from log_setup import get_langfuse
+        lf_client = get_langfuse()
+        if lf_client:
+            await asyncio.to_thread(lf_client.flush)
         log.info("shutdown_complete")
 
 
@@ -206,7 +266,7 @@ async def events(
 @limiter.limit("10/minute")
 async def start_run(
     request: Request,
-    body: StartRunRequest,
+    body: StartRunRequest = Body(...),
     _: dict[str, Any] = Depends(verify_jwt),
 ) -> dict[str, Any]:
     """Budget-check, create a run, kick off the pipeline, return the run_id."""
@@ -297,7 +357,7 @@ async def get_run(
 async def approve_run(
     run_id: str,
     request: Request,
-    body: ApproveRunRequest,
+    body: ApproveRunRequest = Body(...),
     _: dict[str, Any] = Depends(verify_jwt),
 ) -> dict[str, str]:
     """Approve run with final post content and resume publishing."""
@@ -336,17 +396,57 @@ async def reject_run(
     return {"status": "accepted"}
 
 
+@app.delete("/runs/{run_id}", status_code=204)
+@limiter.limit("30/minute")
+async def delete_run(
+    run_id: str,
+    request: Request,
+    _: dict[str, Any] = Depends(verify_jwt),
+) -> None:
+    """Delete a run and all associated records."""
+
+    def _delete() -> bool:
+        from db.client import get_client
+
+        client = get_client()
+        client.table("publish_attempts").delete().eq("run_id", run_id).execute()
+        client.table("draft_posts").delete().eq("run_id", run_id).execute()
+        client.table("run_events").delete().eq("run_id", run_id).execute()
+        client.table("posted_links").delete().eq("run_id", run_id).execute()
+        client.table("run_triggers").update({"run_id": None}).eq("run_id", run_id).execute()
+        result = client.table("runs").delete().eq("id", run_id).execute()
+        return bool(result.data)
+
+    found = await asyncio.to_thread(_delete)
+    if not found:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+
 @app.post("/runs/{run_id}/retry-publish", status_code=202)
 @limiter.limit("10/minute")
 async def retry_publish(
     run_id: str,
     request: Request,
-    body: RetryPublishRequest,
+    body: RetryPublishRequest = Body(...),
     _: dict[str, Any] = Depends(verify_jwt),
 ) -> dict[str, str]:
     """Manually re-attempt publishing for specific platforms (idempotent)."""
-    # Implemented in Gate 13 when the publisher agent supports per-platform retry.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Not yet implemented — Gate 13",
-    )
+    from agents.orchestrator import NotRetriableError
+
+    orchestrator = request.app.state.orchestrator
+    try:
+        await orchestrator.retry_publish(run_id, [p.value for p in body.platforms])
+    except NotRetriableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    return {"status": "accepted"}
+
+
+# ── Static frontend (production) ──────────────────────────────────────────────
+# Built frontend dist is placed at backend/static/ during Docker build (Gate 15).
+# The mount is skipped in local dev where the dist folder doesn't exist yet.
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="static")

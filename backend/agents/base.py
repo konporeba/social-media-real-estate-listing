@@ -17,10 +17,12 @@ class BaseAgent:
         run_id: str,
         emit: Callable[..., Coroutine[Any, Any, None]],
         logger: Any,
+        lf_trace: Any = None,
     ) -> None:
         self.run_id = run_id
         self.emit = emit
         self.log = logger
+        self.lf_trace = lf_trace  # Langfuse StatefulTraceClient; None when disabled
 
     async def run(self, **kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError

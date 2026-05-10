@@ -1,19 +1,25 @@
 services:
   backend:
     build:
-      context: ./backend
+      context: .                        # root — Dockerfile needs both backend/ and frontend/
+      dockerfile: backend/Dockerfile
       target: runtime
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"           # localhost only — Cloudflare Tunnel connects here
     env_file: .env
     depends_on:
       browser-worker:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
+      start_period: 60s                 # allow time for browser-worker dependency + startup
     restart: unless-stopped
 
   browser-worker:
@@ -21,17 +27,17 @@ services:
       context: ./browser-worker
     env_file: .env
     expose:
-      - "8001"
-    volumes:
-      - playwright-browsers:/home/app/.cache/ms-playwright
+      - "8001"                          # internal only — not reachable from outside the host
     mem_limit: 1g
     pids_limit: 256
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
+      start_period: 30s
     restart: unless-stopped
-
-volumes:
-  playwright-browsers:

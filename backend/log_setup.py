@@ -8,6 +8,13 @@ import structlog
 if TYPE_CHECKING:
     from langfuse import Langfuse
 
+_langfuse: "Langfuse | None" = None
+
+
+def get_langfuse() -> "Langfuse | None":
+    """Return the active Langfuse client, or None if not configured."""
+    return _langfuse
+
 
 def configure_logging(level: str = "INFO") -> None:
     log_level = getattr(logging, level.upper(), logging.INFO)
@@ -27,7 +34,8 @@ def configure_logging(level: str = "INFO") -> None:
 
 
 def init_langfuse() -> "Langfuse | None":
-    """Return a Langfuse client if env vars are configured, else None."""
+    """Initialise Langfuse client if env vars are set; store in module global."""
+    global _langfuse
     from config import get_settings
 
     settings = get_settings()
@@ -41,6 +49,7 @@ def init_langfuse() -> "Langfuse | None":
             secret_key=settings.langfuse_secret_key,
             host=settings.langfuse_host or None,
         )
+        _langfuse = client
         return client
     except Exception:
         return None

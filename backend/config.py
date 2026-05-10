@@ -30,6 +30,21 @@ class Settings(BaseSettings):
     schedule_day_of_week: str = "thu"
     schedule_hour: int = 17
     schedule_timezone: str = "Europe/Madrid"
+    digest_hour: int = 8  # UTC hour for the daily digest email
+
+    # Meta (Facebook + Instagram) — use System User long-lived token
+    meta_access_token: str = ""
+    meta_facebook_page_id: str = ""
+    meta_instagram_account_id: str = ""
+
+    # LinkedIn
+    linkedin_access_token: str = ""
+    linkedin_organization_id: str = ""
+    linkedin_token_expiry: str = ""  # ISO date e.g. "2026-12-31"; blank = no check
+
+    # Gmail (error alerts — Gate 13)
+    gmail_address: str = ""
+    gmail_app_password: str = ""
 
     # Budget
     daily_cost_cap_usd: float = 5.00

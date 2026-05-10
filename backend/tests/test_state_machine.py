@@ -29,6 +29,10 @@ LEGAL = [
     ("publishing", "completed"),
     ("publishing", "partial"),
     ("publishing", "failed"),
+    # retry-publish paths
+    ("partial", "completed"),
+    ("failed", "partial"),
+    ("failed", "completed"),
 ]
 
 
@@ -53,12 +57,16 @@ ILLEGAL = [
     ("awaiting_review", "discovering"),
     ("awaiting_review", "generating"),
     ("awaiting_review", "validating"),
-    # Out of terminal states
+    # Out of completed / rejected (fully terminal)
     ("completed", "discovering"),
     ("completed", "failed"),
     ("rejected", "discovering"),
-    ("failed", "discovering"),
+    ("rejected", "failed"),
+    # partial / failed cannot go backwards or sideways
     ("partial", "publishing"),
+    ("partial", "failed"),
+    ("failed", "discovering"),
+    ("failed", "failed"),
 ]
 
 
@@ -75,15 +83,16 @@ def test_every_state_in_valid_transitions() -> None:
     """Ensure VALID_TRANSITIONS covers all states that appear as values."""
     all_targets = {t for targets in VALID_TRANSITIONS.values() for t in targets}
     all_sources = set(VALID_TRANSITIONS.keys())
-    # Every target state must either be a source or be terminal
-    terminal = {"completed", "partial", "rejected", "failed"}
+    # Every target state must be a key in VALID_TRANSITIONS (even if empty set)
     for t in all_targets:
-        assert t in all_sources or t in terminal, f"State {t!r} has no outgoing transitions defined"
+        assert t in all_sources, f"State {t!r} has no entry in VALID_TRANSITIONS"
 
 
-def test_terminal_states_have_no_outgoing() -> None:
-    terminal = {"completed", "partial", "rejected", "failed"}
-    for state in terminal:
+def test_fully_terminal_states_have_no_outgoing() -> None:
+    # completed and rejected can never transition to anything.
+    # partial and failed allow retry-publish paths (→ completed / → partial).
+    fully_terminal = {"completed", "rejected"}
+    for state in fully_terminal:
         assert VALID_TRANSITIONS[state] == frozenset(), (
-            f"Terminal state {state!r} should have no outgoing transitions"
+            f"State {state!r} should have no outgoing transitions"
         )

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -52,11 +53,16 @@ _NAV_TERMS = frozenset({
 
 async def extract_property(url: str) -> dict[str, Any]:
     """Main entry point — returns fully populated dict."""
+    chromium_path = os.getenv("CHROMIUM_PATH") or None  # set to /usr/bin/chromium on Pi
+    launch_kwargs: dict[str, Any] = {
+        "headless": True,
+        "args": ["--no-sandbox", "--disable-dev-shm-usage"],
+    }
+    if chromium_path:
+        launch_kwargs["executable_path"] = chromium_path
+
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-        )
+        browser = await pw.chromium.launch(**launch_kwargs)
         try:
             return await _extract_with_retry(browser, url, max_attempts=2)
         finally:

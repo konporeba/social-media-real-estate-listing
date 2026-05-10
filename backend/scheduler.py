@@ -17,6 +17,17 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 log = structlog.get_logger()
 
 
+async def _fire_daily_digest() -> None:
+    """Send a daily summary email with today's run stats and LLM cost."""
+    try:
+        from tools.gmail import send_daily_digest
+
+        await send_daily_digest()
+        log.info("daily_digest_sent")
+    except Exception as exc:
+        log.error("daily_digest_failed", error=str(exc))
+
+
 async def _fire_scheduled_trigger() -> None:
     """Insert a pending run_trigger row. The trigger_worker claims it."""
     from datetime import datetime, timezone
@@ -50,6 +61,16 @@ def create_scheduler() -> AsyncIOScheduler:
         id="weekly_post_trigger",
         replace_existing=True,
         misfire_grace_time=3600,  # fire up to 1 h late if the process was down
+    )
+
+    scheduler.add_job(
+        _fire_daily_digest,
+        trigger="cron",
+        hour=settings.digest_hour,
+        minute=0,
+        id="daily_digest",
+        replace_existing=True,
+        misfire_grace_time=3600,
     )
 
     return scheduler

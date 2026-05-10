@@ -44,6 +44,7 @@ class Run(BaseModel):
     status: RunStatus
     triggered_by: TriggerSource
     property_url: str | None = None
+    property_title: str | None = None
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime

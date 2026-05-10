@@ -1,0 +1,22 @@
+# Cloudflare Tunnel configuration
+# Generated after running: cloudflared tunnel create social-agent
+#
+# Fill in <TUNNEL-ID> with the UUID printed by that command.
+# The credentials file is written to ~/.cloudflare/<TUNNEL-ID>.json by cloudflared.
+#
+# One-time setup commands (run on the Pi):
+#   cloudflared tunnel login
+#   cloudflared tunnel create social-agent
+#   cloudflared tunnel route dns social-agent agent.yourdomain.com
+#   sudo cloudflared service install   # starts on every boot
+
+tunnel: <TUNNEL-ID>
+credentials-file: /home/pi/.cloudflare/<TUNNEL-ID>.json
+
+ingress:
+  - hostname: agent.yourdomain.com     # replace with your actual domain
+    service: http://localhost:8000
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: false
+  - service: http_status:404           # catch-all — must be last

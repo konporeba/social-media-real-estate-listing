@@ -4,16 +4,11 @@ State machine
 ─────────────
   discovering → generating → validating → awaiting_review → publishing → completed
                                 ↘                               ↘
-                            regenerating                      partial
-                                ↘
-                              rejected
-  any state → failed
+                            regenerating                      partial ──→ completed
+                                ↘                               ↑
+                              rejected              failed ──→ partial / completed
 
-Agents are stubbed in this gate and replaced gate-by-gate:
-  Gate 8  — Discovery agent
-  Gate 9  — Content agent
-  Gate 10 — Validation layer + regeneration loop
-  Gate 12 — Publisher
+  any state → failed
 """
 
 from __future__ import annotations
@@ -28,6 +23,53 @@ from budget import check_daily_budget
 
 log = structlog.get_logger()
 
+
+# ── Background task helper ────────────────────────────────────────────────────
+
+
+def _fire_and_forget(coro) -> asyncio.Task:
+    """Schedule a coroutine as a background task, logging any unhandled exception."""
+    task = asyncio.create_task(coro)
+
+    def _on_done(t: asyncio.Task) -> None:
+        if not t.cancelled() and t.exception():
+            log.error("background_task_error", exc=str(t.exception()))
+
+    task.add_done_callback(_on_done)
+    return task
+
+
+# ── Alert helpers (module-level so they're easy to mock in tests) ──────────────
+
+
+async def _alert_failed(run_id: str, error: str) -> None:
+    from tools.gmail import send_alert
+    await send_alert(
+        f"[Social Agent] Run FAILED — {run_id[:8]}",
+        f"Run {run_id} failed.\n\nError:\n{error}",
+    )
+
+
+async def _alert_partial(run_id: str, failed_platforms: list[str]) -> None:
+    from tools.gmail import send_alert
+    await send_alert(
+        f"[Social Agent] Run PARTIAL — {run_id[:8]}",
+        f"Run {run_id} published to some platforms but not all.\n\n"
+        f"Failed platforms: {', '.join(failed_platforms)}\n\n"
+        "Use the retry-publish endpoint to re-attempt the failed platforms.",
+    )
+
+
+async def _alert_budget_exceeded(spent: float, cap: float) -> None:
+    from tools.gmail import send_alert
+    await send_alert(
+        "[Social Agent] Daily budget cap exceeded — run refused",
+        f"A new run was refused because the daily cost cap was reached.\n\n"
+        f"Spent today: ${spent:.4f}\n"
+        f"Cap:         ${cap:.2f}\n\n"
+        "Raise DAILY_COST_CAP_USD or wait until tomorrow (UTC midnight).",
+    )
+
 # ── State machine ─────────────────────────────────────────────────────────────
 
 VALID_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -38,9 +80,11 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
     "awaiting_review": frozenset({"publishing", "rejected", "failed"}),
     "publishing":      frozenset({"completed", "partial", "failed"}),
     "completed":       frozenset(),
-    "partial":         frozenset(),
+    # retry-publish paths: partial fully succeeds → completed;
+    # failed partially or fully succeeds → partial / completed
+    "partial":         frozenset({"completed"}),
     "rejected":        frozenset(),
-    "failed":          frozenset(),
+    "failed":          frozenset({"partial", "completed"}),
 }
 
 TERMINAL_STATES = frozenset({"completed", "partial", "rejected", "failed"})
@@ -69,16 +113,20 @@ class NotAwaitingReviewError(Exception):
     pass
 
 
+class NotRetriableError(Exception):
+    pass
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 
 class Orchestrator:
     def __init__(self, hub: Any) -> None:
         self.hub = hub
-        # run_id → asyncio.Event set when the human responds
         self._review_events: dict[str, asyncio.Event] = {}
-        # run_id → approved_posts dict, or None if rejected
         self._review_outcomes: dict[str, dict | None] = {}
+        # run_id → Langfuse StatefulTraceClient (None when Langfuse is disabled)
+        self._traces: dict[str, Any] = {}
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -88,11 +136,31 @@ class Orchestrator:
         """Check budget, create run row, start pipeline in background, return run_id."""
         within, spent, cap = await asyncio.to_thread(check_daily_budget)
         if not within:
+            _fire_and_forget(_alert_budget_exceeded(spent, cap))
             raise BudgetExceededError(spent=spent, cap=cap)
 
         run_id = await asyncio.to_thread(self._db_create_run, triggered_by, property_url)
         log.info("run_started", run_id=run_id, triggered_by=triggered_by)
-        asyncio.create_task(self._run_pipeline(run_id, property_url))
+
+        # Open a Langfuse observation (v4 API — no custom trace_id support)
+        from log_setup import get_langfuse
+        lf = get_langfuse()
+        if lf:
+            from config import get_settings
+            settings = get_settings()
+            trace = lf.start_observation(
+                name="pipeline_run",
+                as_type="span",
+                input={"triggered_by": triggered_by, "property_url": property_url},
+                metadata={
+                    "run_id": run_id,
+                    "triggered_by": triggered_by,
+                    "publish_mode": settings.publish_mode,
+                },
+            )
+            self._traces[run_id] = trace
+
+        _fire_and_forget(self._run_pipeline(run_id, property_url))
         return run_id
 
     async def resume(self, run_id: str, approved_posts: dict) -> None:
@@ -101,6 +169,14 @@ class Orchestrator:
             raise NotAwaitingReviewError(
                 f"Run {run_id} is not currently awaiting review "
                 "(it may have completed, or the server restarted)"
+            )
+        # Score the trace: human approved
+        trace = self._traces.get(run_id)
+        if trace:
+            trace.score_trace(
+                name="human_review",
+                value=1.0,
+                comment="Approved by operator",
             )
         self._review_outcomes[run_id] = approved_posts
         self._review_events[run_id].set()
@@ -111,8 +187,26 @@ class Orchestrator:
             raise NotAwaitingReviewError(
                 f"Run {run_id} is not currently awaiting review"
             )
+        # Score the trace: human rejected
+        trace = self._traces.get(run_id)
+        if trace:
+            trace.score_trace(
+                name="human_review",
+                value=0.0,
+                comment="Rejected by operator",
+            )
         self._review_outcomes[run_id] = None
         self._review_events[run_id].set()
+
+    async def retry_publish(self, run_id: str, platforms: list[str]) -> None:
+        """Validate state, then start a background retry for the given platforms."""
+        run = await asyncio.to_thread(self._db_load_run, run_id)
+        if run["status"] not in ("partial", "failed"):
+            raise NotRetriableError(
+                f"Run {run_id} cannot be retried (status: {run['status']!r}). "
+                "Only 'partial' or 'failed' runs are retriable."
+            )
+        _fire_and_forget(self._retry_pipeline(run_id, platforms))
 
     # ── Pipeline (background task) ────────────────────────────────────────────
 
@@ -120,20 +214,94 @@ class Orchestrator:
         self, run_id: str, property_url: str | None
     ) -> None:
         bound = log.bind(run_id=run_id)
+        lf_trace = self._traces.get(run_id)
         try:
-            # ── Discovery (stub — Gate 8) ──────────────────────────────────
-            await self._emit(run_id, "discovery", "discovery_stub",
-                             {"note": "implemented in Gate 8"})
+            # ── Discovery (Gate 8) ────────────────────────────────────────
+            from agents.discovery import DiscoveryAgent
+
+            if property_url:
+                await self._emit(run_id, "discovery", "url_provided",
+                                 {"url": property_url})
+            else:
+                discovery = DiscoveryAgent(
+                    run_id=run_id,
+                    emit=self._emit,
+                    logger=log.bind(run_id=run_id),
+                    lf_trace=lf_trace,
+                )
+                result = await discovery.run()
+                property_url = result["property_url"]
+                await asyncio.to_thread(self._db_set_property_url, run_id, property_url)
+
             await self._transition(run_id, "generating")
 
-            # ── Content generation (stub — Gate 9) ────────────────────────
-            await self._emit(run_id, "content", "content_stub",
-                             {"note": "implemented in Gate 9"})
+            # ── Content generation (Gate 9) ──────────────────────────────
+            from agents.content import ContentAgent
+
+            content = ContentAgent(
+                run_id=run_id,
+                emit=self._emit,
+                logger=log.bind(run_id=run_id),
+                lf_trace=lf_trace,
+            )
+            content_result = await content.run(property_url=property_url)
+            property_data = content_result["property_data"]
+            image_url = content_result["image_url"]
+            drafts = content_result["drafts"]
+
+            if property_data.title:
+                await asyncio.to_thread(
+                    self._db_set_property_title, run_id, property_data.title
+                )
+
             await self._transition(run_id, "validating")
 
-            # ── Validation (stub — Gate 10) ───────────────────────────────
-            await self._emit(run_id, "validation", "validation_stub",
-                             {"note": "implemented in Gate 10"})
+            # ── Validation + regeneration loop (Gate 10) ──────────────────
+            from agents.validation import ValidationAgent
+
+            MAX_REGEN = 2
+            for attempt in range(MAX_REGEN + 1):
+                validator = ValidationAgent(
+                    run_id=run_id,
+                    emit=self._emit,
+                    logger=log.bind(run_id=run_id),
+                    lf_trace=lf_trace,
+                )
+                v_result = await validator.run(
+                    property_data=property_data, drafts=drafts
+                )
+
+                if v_result.passed:
+                    break
+
+                if attempt < MAX_REGEN:
+                    await self._emit(
+                        run_id, "validation", "retry_attempted",
+                        {"attempt": attempt + 1, "errors": v_result.errors},
+                    )
+                    await self._transition(run_id, "regenerating")
+
+                    regen = ContentAgent(
+                        run_id=run_id,
+                        emit=self._emit,
+                        logger=log.bind(run_id=run_id),
+                        lf_trace=lf_trace,
+                    )
+                    regen_result = await regen.run(
+                        property_url=property_url,
+                        existing_data=property_data,
+                        image_url=image_url,
+                        validation_feedback=v_result.errors,
+                        attempt=attempt + 1,
+                    )
+                    drafts = regen_result["drafts"]
+                    await self._transition(run_id, "validating")
+                else:
+                    await self._emit(
+                        run_id, "validation", "validation_max_retries",
+                        {"warnings": v_result.errors},
+                    )
+
             await self._transition(run_id, "awaiting_review")
 
             # ── Human review gate ─────────────────────────────────────────
@@ -146,22 +314,55 @@ class Orchestrator:
             outcome = self._review_outcomes.pop(run_id, None)
 
             if outcome is None:
-                # Rejected
                 await self._transition(run_id, "rejected")
                 await self._emit(run_id, "orchestrator", "run_rejected", {})
                 bound.info("run_rejected")
+                self._lf_finalize_trace(run_id, "rejected", {})
                 return
 
             # ── Store approved content ────────────────────────────────────
             await asyncio.to_thread(self._db_store_approved, run_id, outcome)
 
-            # ── Publishing (stub — Gate 12) ───────────────────────────────
+            # ── Publishing ────────────────────────────────────────────────
             await self._transition(run_id, "publishing")
-            await self._emit(run_id, "publishing", "publishing_stub",
-                             {"note": "implemented in Gate 12"})
-            await self._transition(run_id, "completed")
-            await self._emit(run_id, "orchestrator", "run_completed", {})
-            bound.info("run_completed")
+
+            from agents.publisher import PublisherAgent
+            publisher = PublisherAgent(
+                run_id=run_id,
+                emit=self._emit,
+                logger=log.bind(run_id=run_id),
+                lf_trace=lf_trace,
+            )
+            pub_result = await publisher.run(property_url=property_url or "")
+
+            from agents.publisher import PLATFORMS as _ALL_PLATFORMS
+            effective = pub_result.effective_successes
+            if len(effective) == len(_ALL_PLATFORMS):
+                await self._transition(run_id, "completed")
+                await self._emit(run_id, "orchestrator", "run_completed", {})
+                bound.info("run_completed")
+                self._lf_finalize_trace(
+                    run_id, "completed",
+                    {"property_url": property_url, "platforms": effective},
+                )
+            elif effective:
+                await self._transition(run_id, "partial")
+                await self._emit(
+                    run_id, "orchestrator", "run_partial",
+                    {"failed": pub_result.platforms_failed},
+                )
+                bound.warning("run_partial", failed=pub_result.platforms_failed)
+                self._lf_finalize_trace(
+                    run_id, "partial",
+                    {"property_url": property_url,
+                     "succeeded": pub_result.platforms_succeeded,
+                     "failed": pub_result.platforms_failed},
+                )
+                _fire_and_forget(_alert_partial(run_id, pub_result.platforms_failed))
+            else:
+                msg = "All platforms failed: " + ", ".join(pub_result.platforms_failed)
+                await self._fail(run_id, msg)
+                bound.error("all_platforms_failed")
 
         except asyncio.CancelledError:
             pass
@@ -170,6 +371,49 @@ class Orchestrator:
             await self._fail(run_id, str(exc))
         finally:
             self._review_events.pop(run_id, None)
+
+    async def _retry_pipeline(self, run_id: str, platforms: list[str]) -> None:
+        """Background retry: re-runs publisher for specified platforms only."""
+        bound = log.bind(run_id=run_id)
+        try:
+            run = await asyncio.to_thread(self._db_load_run, run_id)
+            property_url = run.get("property_url") or ""
+            current_status = run["status"]
+
+            from agents.publisher import PublisherAgent
+            publisher = PublisherAgent(
+                run_id=run_id,
+                emit=self._emit,
+                logger=log.bind(run_id=run_id),
+            )
+            await publisher.run(
+                property_url=property_url,
+                platforms_to_attempt=platforms,
+            )
+
+            # Count distinct platforms with a succeeded attempt after the retry
+            total_succeeded = await asyncio.to_thread(
+                self._db_count_succeeded_platforms, run_id
+            )
+
+            if total_succeeded == 3:
+                await self._transition(run_id, "completed")
+                await asyncio.to_thread(self._db_clear_error, run_id)
+                await self._emit(
+                    run_id, "orchestrator", "run_completed", {"via": "retry"}
+                )
+                bound.info("retry_completed_fully")
+            elif total_succeeded > 0 and current_status == "failed":
+                await self._transition(run_id, "partial")
+                await asyncio.to_thread(self._db_clear_error, run_id)
+                bound.info("retry_partial", succeeded=total_succeeded)
+            else:
+                bound.warning("retry_no_improvement", total_succeeded=total_succeeded)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            bound.error("retry_pipeline_error", error=str(exc))
 
     # ── State helpers ─────────────────────────────────────────────────────────
 
@@ -216,10 +460,38 @@ class Orchestrator:
                 },
                 run_id,
             )
+            self._lf_finalize_trace(run_id, "failed", {"error": error})
+            _fire_and_forget(_alert_failed(run_id, error))
         except Exception:
             pass
 
+    def _lf_finalize_trace(self, run_id: str, status: str, output: dict) -> None:
+        """Update the Langfuse observation with final status and output, then end it."""
+        trace = self._traces.pop(run_id, None)
+        if trace is None:
+            return
+        output["status"] = status
+        trace.update(
+            output=output,
+            level="ERROR" if status == "failed" else "DEFAULT",
+        )
+        trace.end()
+
     # ── Sync DB helpers (called via asyncio.to_thread) ────────────────────────
+
+    def _db_set_property_url(self, run_id: str, property_url: str) -> None:
+        from db.client import get_client
+
+        get_client().table("runs").update(
+            {"property_url": property_url}
+        ).eq("id", run_id).execute()
+
+    def _db_set_property_title(self, run_id: str, title: str) -> None:
+        from db.client import get_client
+
+        get_client().table("runs").update(
+            {"property_title": title}
+        ).eq("id", run_id).execute()
 
     def _db_create_run(
         self, triggered_by: str, property_url: str | None
@@ -308,6 +580,37 @@ class Orchestrator:
                 "payload": {"error": error},
             }
         ).execute()
+
+    def _db_load_run(self, run_id: str) -> dict:
+        from db.client import get_client
+
+        result = (
+            get_client().table("runs").select("*").eq("id", run_id).limit(1).execute()
+        )
+        if not result.data:
+            raise ValueError(f"Run {run_id} not found")
+        return result.data[0]
+
+    def _db_clear_error(self, run_id: str) -> None:
+        from db.client import get_client
+
+        get_client().table("runs").update(
+            {"error_message": None}
+        ).eq("id", run_id).execute()
+
+    def _db_count_succeeded_platforms(self, run_id: str) -> int:
+        """Count distinct platforms that have a succeeded publish_attempt for this run."""
+        from db.client import get_client
+
+        result = (
+            get_client()
+            .table("publish_attempts")
+            .select("platform")
+            .eq("run_id", run_id)
+            .eq("status", "succeeded")
+            .execute()
+        )
+        return len({row["platform"] for row in result.data})
 
     def _db_store_approved(self, run_id: str, approved_posts: dict) -> None:
         """Upsert draft_posts with the human-approved content."""
