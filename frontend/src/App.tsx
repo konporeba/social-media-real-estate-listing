@@ -72,7 +72,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-semibold tracking-tight text-gray-100 leading-none">Social Agent</h1>
-              <p className="text-[10px] text-gray-600 leading-none mt-0.5">Real Estate Automation</p>
+              <p className="text-xs text-gray-600 leading-none mt-0.5">Real Estate Automation</p>
             </div>
           </div>
           <ManualTrigger />

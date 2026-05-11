@@ -24,9 +24,9 @@ const STAGE_AGENTS: Record<string, string[]> = {
 const STAGE_EVENT_TYPES: Record<string, string[]> = {
   discover: ['run_started', 'property_selected', 'property_discovered', 'property_not_found'],
   generate: ['content_generating', 'content_generated', 'content_validating', 'content_validated', 'content_invalid', 'content_regenerating', 'draft_saved'],
-  review:   ['awaiting_review', 'approved', 'rejected'],
-  publish:  ['publishing_started', 'post_published', 'post_failed'],
-  done:     ['run_completed', 'run_failed'],
+  review:   ['awaiting_human_review', 'review_email_sent', 'run_rejected'],
+  publish:  ['publishing_started', 'platform_posted', 'platform_failed', 'platform_not_configured', 'platform_skipped', 'posted_link_saved', 'publishing_done'],
+  done:     ['run_completed', 'run_failed', 'run_partial'],
 };
 
 function matchesStage(event: RunEvent, stage: string): boolean {
@@ -35,9 +35,19 @@ function matchesStage(event: RunEvent, stage: string): boolean {
   return agents.includes(event.agent) || types.includes(event.event_type);
 }
 
-// ─── Event info: label + 2-sentence description ───────────────────────────────
+// ─── Event info: label + description (detail may be a fn receiving the payload) ─
 
-const EVENT_INFO: Record<string, { label: string; detail: string }> = {
+type DetailFn = (payload: Record<string, unknown>) => string;
+type EventConfig = { label: string; detail: string | DetailFn };
+
+function cap(s: string) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+function platformLabel(p: Record<string, unknown>) { return cap(String(p.platform ?? 'Platform')); }
+function platformList(arr: unknown) {
+  const items = Array.isArray(arr) ? (arr as string[]) : [];
+  return items.map(cap).join(', ') || '—';
+}
+
+const EVENT_INFO: Record<string, EventConfig> = {
   run_started: {
     label:  'Pipeline started',
     detail: 'All agents are initialized and the orchestrator is coordinating the pipeline. Property discovery will begin immediately.',
@@ -60,7 +70,7 @@ const EVENT_INFO: Record<string, { label: string; detail: string }> = {
   },
   content_generated: {
     label:  'Content generated',
-    detail: 'Unique drafts have been written for Facebook, Instagram, and LinkedIn. Each version is adapted to the platform\'s character limits and engagement patterns.',
+    detail: "Unique drafts have been written for Facebook, Instagram, and LinkedIn. Each version is adapted to the platform's character limits and engagement patterns.",
   },
   content_validating: {
     label:  'Validating content',
@@ -82,15 +92,15 @@ const EVENT_INFO: Record<string, { label: string; detail: string }> = {
     label:  'Draft saved',
     detail: 'All post drafts have been written to the database and are preserved. They are now ready to be displayed for human review and approval.',
   },
-  awaiting_review: {
+  awaiting_human_review: {
     label:  'Awaiting human review',
-    detail: 'The pipeline is paused and waiting for your decision. Preview each platform\'s post, edit content if needed, then approve or reject to continue.',
+    detail: "The pipeline is paused and waiting for your decision. Preview each platform's post, edit content if needed, then approve or reject to continue.",
   },
-  approved: {
-    label:  'Posts approved',
-    detail: 'The reviewer approved the content for the selected platforms. Publishing will begin immediately.',
+  review_email_sent: {
+    label:  'Review email dispatched',
+    detail: 'A notification email with the post drafts and an approval link has been sent to the reviewer. The pipeline will remain paused until a decision is made.',
   },
-  rejected: {
+  run_rejected: {
     label:  'Posts rejected',
     detail: 'The reviewer chose not to publish this batch. The run is now closed and no posts will be sent to any platform.',
   },
@@ -98,17 +108,67 @@ const EVENT_INFO: Record<string, { label: string; detail: string }> = {
     label:  'Publishing started',
     detail: 'The publishing agent is now sending posts to each selected social media platform. Platforms are handled independently, so a failure on one does not affect the others.',
   },
-  post_published: {
+  platform_posted: {
     label:  'Post published',
-    detail: 'The post was accepted and is now live on the platform.',
+    detail: (p) => {
+      const label = platformLabel(p);
+      return String(p.mode) === 'shadow'
+        ? `${label} post was recorded in shadow mode — no real API call was made.`
+        : `The post is now live on ${label}.`;
+    },
   },
-  post_failed: {
+  platform_failed: {
     label:  'Post failed to publish',
-    detail: 'The platform rejected the post — this may be due to API rate limits, authentication issues, or content policy violations. Check the error details below.',
+    detail: (p) => {
+      const label = platformLabel(p);
+      const error = String(p.error ?? '').trim();
+      return error
+        ? `${label} rejected the post: ${error}`
+        : `${label} rejected the post — this may be due to API rate limits, authentication issues, or content policy violations.`;
+    },
+  },
+  platform_not_configured: {
+    label:  'Platform not configured',
+    detail: (p) => `${platformLabel(p)} has no API credentials configured and was skipped. Add credentials to .env to enable this platform.`,
+  },
+  platform_skipped: {
+    label:  'Platform already posted',
+    detail: (p) => `${platformLabel(p)} was skipped — a successful post already exists from a previous attempt on this run.`,
+  },
+  posted_link_saved: {
+    label:  'Posted link recorded',
+    detail: (p) => {
+      const platforms = platformList(p.platforms);
+      return `The property URL has been saved to the posted-links list for: ${platforms}. It will not be picked up by the discovery agent again.`;
+    },
+  },
+  publishing_done: {
+    label:  'Publishing session complete',
+    detail: (p) => {
+      const succeeded = platformList(p.succeeded);
+      const failed    = platformList(p.failed);
+      const skipped   = platformList(p.skipped);
+      const none      = platformList(p.not_configured);
+      const parts: string[] = [];
+      if ((p.succeeded as string[] | undefined)?.length)       parts.push(`Published: ${succeeded}`);
+      if ((p.failed    as string[] | undefined)?.length)       parts.push(`Failed: ${failed}`);
+      if ((p.skipped   as string[] | undefined)?.length)       parts.push(`Already posted: ${skipped}`);
+      if ((p.not_configured as string[] | undefined)?.length)  parts.push(`Not configured: ${none}`);
+      return parts.length ? parts.join(' · ') : 'Publishing session finished.';
+    },
   },
   run_completed: {
     label:  'Pipeline complete',
     detail: 'All selected posts have been published successfully. The run is now closed.',
+  },
+  run_partial: {
+    label:  'Run partially completed',
+    detail: (p) => {
+      const failed = platformList(p.failed);
+      return (p.failed as string[] | undefined)?.length
+        ? `Posts were not published to: ${failed}. Use Retry publish to re-attempt the failed platforms.`
+        : 'Some platforms were not published. Use Retry publish to re-attempt.';
+    },
   },
   run_failed: {
     label:  'Pipeline failed',
@@ -120,7 +180,7 @@ const EVENT_INFO: Record<string, { label: string; detail: string }> = {
   },
 };
 
-function getEventInfo(eventType: string) {
+function getEventInfo(eventType: string): EventConfig {
   if (EVENT_INFO[eventType]) return EVENT_INFO[eventType];
   const label = eventType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   return { label, detail: `The ${eventType.replace(/_/g, ' ')} event was emitted by the agent.` };
@@ -134,7 +194,8 @@ function EventRow({ event, isLast }: { event: RunEvent; isLast: boolean }) {
     dot:   'bg-gray-400',
     label: event.agent,
   };
-  const info = getEventInfo(event.event_type);
+  const info   = getEventInfo(event.event_type);
+  const detail = typeof info.detail === 'function' ? info.detail(event.payload) : info.detail;
 
   return (
     <div className="flex gap-3 animate-fade-in">
@@ -155,7 +216,7 @@ function EventRow({ event, isLast }: { event: RunEvent; isLast: boolean }) {
             {new Date(event.created_at).toLocaleTimeString('pl-PL', { hour12: false })}
           </span>
         </div>
-        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{info.detail}</p>
+        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{detail}</p>
       </div>
     </div>
   );
@@ -203,7 +264,7 @@ export default function ActivityLog({ events, stageFilter, onClearFilter }: Acti
               Clear filter
             </button>
           )}
-          <span className="text-[10px] text-gray-600 bg-gray-800 px-2 py-0.5 rounded-full font-mono">
+          <span className="text-[10px] text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full font-mono">
             {visible.length}{stageFilter && events.length !== visible.length ? `/${events.length}` : ''} events
           </span>
         </div>

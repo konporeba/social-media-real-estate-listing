@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     gmail_address: str = ""
     gmail_app_password: str = ""
 
+    # Review notification recipient
+    recipient_name: str = ""
+    recipient_email: str = ""
+
     # Budget
     daily_cost_cap_usd: float = 5.00
 

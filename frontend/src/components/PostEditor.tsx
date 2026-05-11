@@ -477,7 +477,7 @@ export function DraftReview({ run, onClear }: { run: RunDetail; onClear: () => v
         </div>
         <button
           onClick={onClear}
-          className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors underline"
+          className="text-xs text-gray-500 hover:text-gray-300 transition-colors underline"
         >
           Show activity log
         </button>

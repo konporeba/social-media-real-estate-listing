@@ -151,11 +151,11 @@ function RunRow({ run }: { run: Run }) {
         </div>
       </div>
       <div className="flex items-center gap-1.5 mt-0.5">
-        <span className="text-[10px] text-gray-600">{formatDate(run.created_at)}</span>
+        <span className="text-xs text-gray-600">{formatDate(run.created_at)}</span>
         {duration && (
           <>
-            <span className="text-[10px] text-gray-700">·</span>
-            <span className="text-[10px] text-gray-700">{duration}</span>
+            <span className="text-xs text-gray-700">·</span>
+            <span className="text-xs text-gray-700">{duration}</span>
           </>
         )}
       </div>
@@ -189,7 +189,7 @@ export default function RunHistory() {
       <div className="px-4 py-3 border-b border-gray-800/80 flex items-center justify-between">
         <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Run History</span>
         {!!runs?.length && (
-          <span className="text-[10px] text-gray-700 bg-gray-800 px-1.5 py-0.5 rounded-full">{runs.length}</span>
+          <span className="text-[10px] text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded-full">{runs.length}</span>
         )}
       </div>
       {isLoading && (

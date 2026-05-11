@@ -37,11 +37,12 @@ PLATFORMS = ("facebook", "instagram", "linkedin")
 class PublishResult:
     platforms_succeeded: list[str] = field(default_factory=list)
     platforms_failed: list[str] = field(default_factory=list)
-    platforms_skipped: list[str] = field(default_factory=list)  # idempotency hit
+    platforms_skipped: list[str] = field(default_factory=list)      # idempotency hit
+    platforms_not_configured: list[str] = field(default_factory=list)  # missing credentials
 
     @property
     def effective_successes(self) -> list[str]:
-        """Platforms that ended up posted (new or already succeeded)."""
+        """Platforms that ended up posted (new or already succeeded via idempotency)."""
         return self.platforms_succeeded + self.platforms_skipped
 
 
@@ -98,6 +99,17 @@ class PublisherAgent(BaseAgent):
                     {"platform": platform, "reason": "already_succeeded"},
                 )
                 result.platforms_skipped.append(platform)
+                continue
+
+            # ── Credential check ──────────────────────────────────────────────
+            from tools.social import get_configured_platforms
+            if platform not in get_configured_platforms(settings):
+                bound.info("platform_not_configured", platform=platform)
+                await self.emit(
+                    self.run_id, "publishing", "platform_not_configured",
+                    {"platform": platform},
+                )
+                result.platforms_not_configured.append(platform)
                 continue
 
             content = drafts.get(platform, {}).get("final_content") or ""
@@ -164,6 +176,7 @@ class PublisherAgent(BaseAgent):
                 "succeeded": result.platforms_succeeded,
                 "failed": result.platforms_failed,
                 "skipped": result.platforms_skipped,
+                "not_configured": result.platforms_not_configured,
             },
         )
         if lf_span:

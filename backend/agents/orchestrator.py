@@ -45,7 +45,7 @@ def _fire_and_forget(coro) -> asyncio.Task:
 async def _alert_failed(run_id: str, error: str) -> None:
     from tools.gmail import send_alert
     await send_alert(
-        f"[Social Agent] Run FAILED — {run_id[:8]}",
+        f"[Real Estate AI Agent] Run FAILED — {run_id[:8]}",
         f"Run {run_id} failed.\n\nError:\n{error}",
     )
 
@@ -53,7 +53,7 @@ async def _alert_failed(run_id: str, error: str) -> None:
 async def _alert_partial(run_id: str, failed_platforms: list[str]) -> None:
     from tools.gmail import send_alert
     await send_alert(
-        f"[Social Agent] Run PARTIAL — {run_id[:8]}",
+        f"[Real Estate AI Agent] Run PARTIAL — {run_id[:8]}",
         f"Run {run_id} published to some platforms but not all.\n\n"
         f"Failed platforms: {', '.join(failed_platforms)}\n\n"
         "Use the retry-publish endpoint to re-attempt the failed platforms.",
@@ -63,11 +63,28 @@ async def _alert_partial(run_id: str, failed_platforms: list[str]) -> None:
 async def _alert_budget_exceeded(spent: float, cap: float) -> None:
     from tools.gmail import send_alert
     await send_alert(
-        "[Social Agent] Daily budget cap exceeded — run refused",
+        "[Real Estate AI Agent] Daily budget cap exceeded — run refused",
         f"A new run was refused because the daily cost cap was reached.\n\n"
         f"Spent today: ${spent:.4f}\n"
         f"Cap:         ${cap:.2f}\n\n"
         "Raise DAILY_COST_CAP_USD or wait until tomorrow (UTC midnight).",
+    )
+
+
+async def _alert_review_ready(
+    run_id: str,
+    property_title: str,
+    property_url: str | None,
+    drafts: dict[str, Any],
+    image_url: str | None,
+) -> None:
+    from tools.gmail import send_review_ready
+    await send_review_ready(
+        run_id=run_id,
+        property_title=property_title,
+        property_url=property_url,
+        drafts=drafts,
+        image_url=image_url,
     )
 
 # ── State machine ─────────────────────────────────────────────────────────────
@@ -304,6 +321,16 @@ class Orchestrator:
 
             await self._transition(run_id, "awaiting_review")
 
+            # ── Notify reviewer by email ──────────────────────────────────
+            await self._emit(run_id, "orchestrator", "review_email_sent", {})
+            _fire_and_forget(_alert_review_ready(
+                run_id=run_id,
+                property_title=property_data.title or "",
+                property_url=property_url,
+                drafts=drafts,
+                image_url=image_url,
+            ))
+
             # ── Human review gate ─────────────────────────────────────────
             review_event = asyncio.Event()
             self._review_events[run_id] = review_event
@@ -335,34 +362,37 @@ class Orchestrator:
             )
             pub_result = await publisher.run(property_url=property_url or "")
 
-            from agents.publisher import PLATFORMS as _ALL_PLATFORMS
             effective = pub_result.effective_successes
-            if len(effective) == len(_ALL_PLATFORMS):
+            if pub_result.platforms_failed:
+                if effective:
+                    await self._transition(run_id, "partial")
+                    await self._emit(
+                        run_id, "orchestrator", "run_partial",
+                        {"failed": pub_result.platforms_failed,
+                         "not_configured": pub_result.platforms_not_configured},
+                    )
+                    bound.warning("run_partial", failed=pub_result.platforms_failed)
+                    self._lf_finalize_trace(
+                        run_id, "partial",
+                        {"property_url": property_url,
+                         "succeeded": pub_result.platforms_succeeded,
+                         "failed": pub_result.platforms_failed},
+                    )
+                    _fire_and_forget(_alert_partial(run_id, pub_result.platforms_failed))
+                else:
+                    msg = "All platforms failed: " + ", ".join(pub_result.platforms_failed)
+                    await self._fail(run_id, msg)
+                    bound.error("all_platforms_failed")
+            else:
                 await self._transition(run_id, "completed")
-                await self._emit(run_id, "orchestrator", "run_completed", {})
+                await self._emit(run_id, "orchestrator", "run_completed",
+                                 {"not_configured": pub_result.platforms_not_configured})
                 bound.info("run_completed")
                 self._lf_finalize_trace(
                     run_id, "completed",
-                    {"property_url": property_url, "platforms": effective},
+                    {"property_url": property_url, "platforms": effective,
+                     "not_configured": pub_result.platforms_not_configured},
                 )
-            elif effective:
-                await self._transition(run_id, "partial")
-                await self._emit(
-                    run_id, "orchestrator", "run_partial",
-                    {"failed": pub_result.platforms_failed},
-                )
-                bound.warning("run_partial", failed=pub_result.platforms_failed)
-                self._lf_finalize_trace(
-                    run_id, "partial",
-                    {"property_url": property_url,
-                     "succeeded": pub_result.platforms_succeeded,
-                     "failed": pub_result.platforms_failed},
-                )
-                _fire_and_forget(_alert_partial(run_id, pub_result.platforms_failed))
-            else:
-                msg = "All platforms failed: " + ", ".join(pub_result.platforms_failed)
-                await self._fail(run_id, msg)
-                bound.error("all_platforms_failed")
 
         except asyncio.CancelledError:
             pass
@@ -396,7 +426,11 @@ class Orchestrator:
                 self._db_count_succeeded_platforms, run_id
             )
 
-            if total_succeeded == 3:
+            from tools.social import get_configured_platforms
+            from config import get_settings as _get_settings
+            configured_count = len(get_configured_platforms(_get_settings()))
+
+            if configured_count > 0 and total_succeeded >= configured_count:
                 await self._transition(run_id, "completed")
                 await asyncio.to_thread(self._db_clear_error, run_id)
                 await self._emit(

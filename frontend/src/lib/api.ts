@@ -15,6 +15,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getMode: () => request<{ publish_mode: string }>('/mode'),
+
   getRuns: () => request<Run[]>('/runs'),
 
   getRun: (id: string) => request<RunDetail>(`/runs/${id}`),

@@ -61,7 +61,7 @@ async def _stuck_review_watcher() -> None:
                 from tools.gmail import send_alert
 
                 await send_alert(
-                    f"[Social Agent] Run stuck in review — {run_id[:8]}",
+                    f"[Real Estate AI Agent] Run stuck in review — {run_id[:8]}",
                     f"Run {run_id} has been waiting for human review since "
                     f"{run['updated_at']}.\n\n"
                     f"Property: {run.get('property_url') or 'unknown'}\n\n"
@@ -180,7 +180,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 _settings = get_settings()
 
-app = FastAPI(title="Social Agent API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Real Estate AI Agent API", version="0.1.0", lifespan=lifespan)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -195,6 +195,12 @@ app.add_middleware(
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
+
+
+@app.get("/mode")
+async def get_mode(_: dict[str, Any] = Depends(verify_jwt)) -> dict[str, str]:
+    """Return current publish mode so the UI can warn when shadow mode is active."""
+    return {"publish_mode": get_settings().publish_mode}
 
 
 @app.get("/health")

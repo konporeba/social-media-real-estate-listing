@@ -55,10 +55,10 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
       <div className="flex items-start justify-between mb-2 gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-gray-200">Run</span>
-          <span className="font-mono text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-md">
+          <span className="font-mono text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded-md">
             {run.id.slice(0, 8)}
           </span>
-          <span className="text-xs text-gray-600 bg-gray-800/60 px-2 py-0.5 rounded-md">
+          <span className="text-xs text-gray-400 bg-gray-800/60 px-2 py-0.5 rounded-md">
             {run.triggered_by === 'schedule' ? '⏰ scheduled' : '◎ manual'}
           </span>
         </div>
@@ -72,7 +72,7 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
       </div>
 
       {activeFilter && (
-        <p className="text-[10px] text-blue-400/70 mb-4">
+        <p className="text-xs text-blue-400/70 mb-4">
           Showing activity for <span className="font-semibold capitalize">{activeFilter}</span> stage —{' '}
           <button onClick={() => onStageClick(null)} className="underline hover:text-blue-300 transition-colors">
             show all
@@ -80,7 +80,7 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
         </p>
       )}
       {!activeFilter && isTerminal && (
-        <p className="text-[10px] text-gray-600 mb-4">Click a stage to filter the activity log</p>
+        <p className="text-xs text-gray-600 mb-4">Click a stage to filter the activity log</p>
       )}
 
       <div className="flex items-center">

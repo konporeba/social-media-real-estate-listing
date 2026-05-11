@@ -2,6 +2,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { Run, RunDetail } from '../types';
 
+export function useMode() {
+  return useQuery<{ publish_mode: string }>({
+    queryKey: ['mode'],
+    queryFn: api.getMode,
+    staleTime: Infinity,
+  });
+}
+
 export function useRuns() {
   return useQuery<Run[]>({
     queryKey: ['runs'],

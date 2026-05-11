@@ -64,6 +64,31 @@ def _check_token_expiry(expiry_iso: str, platform: str) -> bool:
 # ── Live helpers ───────────────────────────────────────────────────────────────
 
 
+async def _get_page_access_token(system_user_token: str, page_id: str) -> str:
+    """Exchange a System User token for a Page Access Token.
+
+    /{page_id}/photos and /{ig_account_id}/media both require a Page Access
+    Token, not a raw System User token.  This call is lightweight and cached
+    by Meta for the lifetime of the token.
+    """
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(
+            f"{GRAPH_BASE}/{page_id}",
+            params={"fields": "access_token", "access_token": system_user_token},
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Failed to obtain Page Access Token: {resp.status_code}: {resp.text[:300]}"
+        )
+    token = resp.json().get("access_token")
+    if not token:
+        raise RuntimeError(
+            "Page Access Token not returned — ensure the System User has the "
+            "Facebook Page added as an asset with Full Control in Meta Business Manager."
+        )
+    return token
+
+
 async def live_post_facebook(
     content: str,
     image_url: str,
@@ -71,11 +96,11 @@ async def live_post_facebook(
     access_token: str,
 ) -> str:
     """POST /{page_id}/photos via Meta Graph API. Returns external post_id."""
+    page_token = await _get_page_access_token(access_token, page_id)
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{GRAPH_BASE}/{page_id}/photos",
-            headers={"Authorization": f"Bearer {access_token}"},
-            params={"message": content, "url": image_url},
+            params={"message": content, "url": image_url, "access_token": page_token},
         )
     if resp.status_code != 200:
         raise RuntimeError(
@@ -86,15 +111,72 @@ async def live_post_facebook(
     return data.get("post_id") or data.get("id", "unknown")
 
 
+async def _wait_for_ig_container(
+    client: httpx.AsyncClient,
+    creation_id: str,
+    page_token: str,
+    *,
+    timeout_s: int = 90,
+    poll_interval_s: float = 5.0,
+) -> None:
+    """Poll until the Instagram media container status is FINISHED.
+
+    Instagram processes the image asynchronously after container creation.
+    Publishing before status is FINISHED returns error_subcode 2207027.
+    """
+    import asyncio
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while True:
+        resp = await client.get(
+            f"{GRAPH_BASE}/{creation_id}",
+            params={"fields": "status_code", "access_token": page_token},
+        )
+        if resp.status_code == 200:
+            status_code = resp.json().get("status_code", "")
+            log.debug("ig_container_status", creation_id=creation_id, status=status_code)
+            if status_code == "FINISHED":
+                return
+            if status_code == "ERROR":
+                raise RuntimeError(
+                    f"Instagram media container entered ERROR state: {resp.text[:300]}"
+                )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            last = resp.json().get("status_code", "unknown") if resp.status_code == 200 else "?"
+            raise RuntimeError(
+                f"Instagram media container not ready after {timeout_s}s "
+                f"(last status: {last!r})"
+            )
+        await asyncio.sleep(min(poll_interval_s, remaining))
+
+
 async def live_post_instagram(
     content: str,
     image_url: str,
     ig_account_id: str,
     access_token: str,
+    page_id: str,
 ) -> str:
-    """Two-step media container creation + publish via Instagram Graph API."""
-    meta_headers = {"Authorization": f"Bearer {access_token}"}
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    """Three-step media container creation + readiness poll + publish via Instagram Graph API."""
+    page_token = await _get_page_access_token(access_token, page_id)
+    meta_headers = {"Authorization": f"Bearer {page_token}"}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Resolve the Instagram Business Account ID from the connected Facebook Page.
+        # The ID shown in Business Manager can differ from the one the Graph API uses.
+        ig_resp = await client.get(
+            f"{GRAPH_BASE}/{page_id}",
+            params={"fields": "instagram_business_account", "access_token": page_token},
+        )
+        if ig_resp.status_code == 200:
+            ig_data = ig_resp.json().get("instagram_business_account")
+            if ig_data and ig_data.get("id"):
+                resolved = ig_data["id"]
+                if resolved != ig_account_id:
+                    log.info("instagram_id_resolved", configured=ig_account_id, resolved=resolved)
+                ig_account_id = resolved
+
         # Step 1: create media container
         r1 = await client.post(
             f"{GRAPH_BASE}/{ig_account_id}/media",
@@ -107,7 +189,10 @@ async def live_post_instagram(
             )
         creation_id = r1.json()["id"]
 
-        # Step 2: publish the container
+        # Step 2: wait for Instagram to finish processing the image
+        await _wait_for_ig_container(client, creation_id, page_token)
+
+        # Step 3: publish the container
         r2 = await client.post(
             f"{GRAPH_BASE}/{ig_account_id}/media_publish",
             headers=meta_headers,
@@ -137,7 +222,7 @@ async def live_post_linkedin(
 
         asyncio.create_task(
             send_alert(
-                "[Social Agent] LinkedIn token expiring soon",
+                "[Real Estate AI Agent] LinkedIn token expiring soon",
                 f"The LinkedIn access token will expire on {s.linkedin_token_expiry}.\n\n"
                 "Refresh it before it expires to prevent publishing failures.\n"
                 "Update LINKEDIN_ACCESS_TOKEN and LINKEDIN_TOKEN_EXPIRY in .env.",
@@ -228,6 +313,21 @@ async def live_post_linkedin(
         return r3.headers.get("x-restli-id") or r3.json().get("id", "unknown")
 
 
+# ── Credential helpers ─────────────────────────────────────────────────────────
+
+
+def get_configured_platforms(settings) -> list[str]:
+    """Return platforms that have all required credentials set in settings."""
+    configured = []
+    if settings.meta_access_token and settings.meta_facebook_page_id:
+        configured.append("facebook")
+    if settings.meta_access_token and settings.meta_instagram_account_id:
+        configured.append("instagram")
+    if settings.linkedin_access_token and settings.linkedin_organization_id:
+        configured.append("linkedin")
+    return configured
+
+
 # ── Unified dispatcher ─────────────────────────────────────────────────────────
 
 
@@ -257,7 +357,8 @@ async def post_to_platform(
         )
     if platform == "instagram":
         return await live_post_instagram(
-            content, image_url or "", s.meta_instagram_account_id, s.meta_access_token
+            content, image_url or "", s.meta_instagram_account_id, s.meta_access_token,
+            page_id=s.meta_facebook_page_id,
         )
     if platform == "linkedin":
         return await live_post_linkedin(
