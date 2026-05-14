@@ -183,10 +183,14 @@ class Orchestrator:
     async def resume(self, run_id: str, approved_posts: dict) -> None:
         """Signal the paused pipeline to continue with approved content."""
         if run_id not in self._review_events:
-            raise NotAwaitingReviewError(
-                f"Run {run_id} is not currently awaiting review "
-                "(it may have completed, or the server restarted)"
-            )
+            # Server may have restarted — verify DB state then recover directly
+            run = await asyncio.to_thread(self._db_load_run, run_id)
+            if run["status"] != "awaiting_review":
+                raise NotAwaitingReviewError(
+                    f"Run {run_id} is not awaiting review (status: {run['status']!r})"
+                )
+            _fire_and_forget(self._recover_approved(run_id, approved_posts))
+            return
         # Score the trace: human approved
         trace = self._traces.get(run_id)
         if trace:
@@ -201,9 +205,16 @@ class Orchestrator:
     async def reject(self, run_id: str) -> None:
         """Signal the paused pipeline to abort."""
         if run_id not in self._review_events:
-            raise NotAwaitingReviewError(
-                f"Run {run_id} is not currently awaiting review"
-            )
+            # Server may have restarted — verify DB state then recover directly
+            run = await asyncio.to_thread(self._db_load_run, run_id)
+            if run["status"] != "awaiting_review":
+                raise NotAwaitingReviewError(
+                    f"Run {run_id} is not awaiting review (status: {run['status']!r})"
+                )
+            await self._transition(run_id, "rejected")
+            await self._emit(run_id, "orchestrator", "run_rejected", {})
+            log.info("run_rejected_via_recovery", run_id=run_id)
+            return
         # Score the trace: human rejected
         trace = self._traces.get(run_id)
         if trace:
@@ -401,6 +412,44 @@ class Orchestrator:
             await self._fail(run_id, str(exc))
         finally:
             self._review_events.pop(run_id, None)
+
+    async def _recover_approved(self, run_id: str, approved_posts: dict) -> None:
+        """Re-enter the pipeline after a server restart: store approval and publish."""
+        bound = log.bind(run_id=run_id)
+        try:
+            run = await asyncio.to_thread(self._db_load_run, run_id)
+            property_url = run.get("property_url") or ""
+
+            await asyncio.to_thread(self._db_store_approved, run_id, approved_posts)
+            await self._transition(run_id, "publishing")
+
+            from agents.publisher import PublisherAgent
+            publisher = PublisherAgent(
+                run_id=run_id,
+                emit=self._emit,
+                logger=bound,
+            )
+            pub_result = await publisher.run(property_url=property_url)
+
+            if pub_result.platforms_failed:
+                if pub_result.effective_successes:
+                    await self._transition(run_id, "partial")
+                    await self._emit(run_id, "orchestrator", "run_partial",
+                                     {"failed": pub_result.platforms_failed,
+                                      "not_configured": pub_result.platforms_not_configured})
+                    _fire_and_forget(_alert_partial(run_id, pub_result.platforms_failed))
+                else:
+                    await self._fail(run_id, "All platforms failed: " + ", ".join(pub_result.platforms_failed))
+            else:
+                await self._transition(run_id, "completed")
+                await self._emit(run_id, "orchestrator", "run_completed",
+                                 {"not_configured": pub_result.platforms_not_configured})
+                bound.info("run_completed_via_recovery")
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            bound.error("recovery_pipeline_error", error=str(exc))
+            await self._fail(run_id, str(exc))
 
     async def _retry_pipeline(self, run_id: str, platforms: list[str]) -> None:
         """Background retry: re-runs publisher for specified platforms only."""

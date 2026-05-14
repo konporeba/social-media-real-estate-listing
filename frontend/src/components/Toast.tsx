@@ -2,10 +2,10 @@ import { useEffect } from 'react';
 import { useAppStore } from '../store';
 
 const TOAST_CONFIG: Record<string, { bg: string; icon: string }> = {
-  info:    { bg: 'bg-gray-800 border-blue-600/30 text-blue-200',   icon: 'ℹ' },
-  success: { bg: 'bg-gray-800 border-green-600/30 text-green-200', icon: '✓' },
-  error:   { bg: 'bg-gray-800 border-red-600/30 text-red-200',     icon: '✕' },
-  warning: { bg: 'bg-gray-800 border-yellow-600/30 text-yellow-200', icon: '⚠' },
+  info:    { bg: 'bg-white dark:bg-gray-800 border-blue-300 dark:border-blue-600/30 text-blue-700 dark:text-blue-200',     icon: 'ℹ' },
+  success: { bg: 'bg-white dark:bg-gray-800 border-green-300 dark:border-green-600/30 text-green-700 dark:text-green-200', icon: '✓' },
+  error:   { bg: 'bg-white dark:bg-gray-800 border-red-300 dark:border-red-600/30 text-red-700 dark:text-red-200',         icon: '✕' },
+  warning: { bg: 'bg-white dark:bg-gray-800 border-yellow-300 dark:border-yellow-600/30 text-yellow-700 dark:text-yellow-200', icon: '⚠' },
 };
 
 function Toast({ id, message, type }: { id: string; message: string; type: string }) {
