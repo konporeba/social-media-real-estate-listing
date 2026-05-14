@@ -195,116 +195,40 @@ function FacebookPreview({ content, imageUrl }: { content: string; imageUrl?: st
   );
 }
 
-// ─── Single platform column ───────────────────────────────────────────────────
+// ─── Shared platform tab bar ──────────────────────────────────────────────────
 
-interface PlatformColumnProps {
-  run:               RunDetail;
-  platform:          PlatformType;
-  content:           string;
-  isSelected:        boolean;
-  onContentChange:   (c: string) => void;
-  onToggleSelected:  () => void;
-  readOnly?:         boolean;
-}
-
-function PlatformColumn({ run, platform, content, isSelected, onContentChange, onToggleSelected, readOnly }: PlatformColumnProps) {
-  const draft       = getDraft(run, platform);
-  const limits      = CHAR_LIMITS[platform];
-  const style       = PLATFORM_STYLE[platform];
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [content]);
-
+function PlatformTabs({
+  active,
+  onSelect,
+  dotColor,
+}: {
+  active: PlatformType;
+  onSelect: (p: PlatformType) => void;
+  dotColor?: (p: PlatformType) => string;
+}) {
   return (
-    <div className="flex flex-col gap-3 min-w-0">
-      {/* Platform header */}
-      <div className={`flex items-center justify-between px-3 py-2 rounded-xl ${style.bg} border ${style.border}`}>
-        <div className={`flex items-center gap-2 ${style.text}`}>
-          {PLATFORM_ICONS[platform]}
-          <span className="text-sm font-semibold">{PLATFORM_LABELS[platform]}</span>
-        </div>
-        {!readOnly && (
+    <div className="flex border-b border-gray-200 dark:border-gray-800/60 shrink-0 px-2">
+      {PLATFORMS.map((p) => {
+        const style = PLATFORM_STYLE[p];
+        const isActive = p === active;
+        return (
           <button
-            role="checkbox"
-            aria-checked={isSelected}
-            onClick={onToggleSelected}
-            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${
-              isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-600 hover:border-gray-400 bg-transparent'
+            key={p}
+            onClick={() => onSelect(p)}
+            className={`flex items-center gap-2 px-4 py-3 text-sm border-b-2 -mb-px transition-colors ${
+              isActive
+                ? `border-current ${style.text}`
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
-            {isSelected && (
-              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
+            {PLATFORM_ICONS[p]}
+            <span className="font-medium">{PLATFORM_LABELS[p]}</span>
+            {dotColor && (
+              <span className={`w-1.5 h-1.5 rounded-full ${dotColor(p)}`} />
             )}
           </button>
-        )}
-      </div>
-
-      {/* Preview card — A5-portrait proportions, inner scroll */}
-      <div className={`rounded-xl border ${style.border} overflow-hidden bg-gray-950/60 shadow-lg flex-shrink-0`}>
-        {/* Approval badge */}
-        {!readOnly && (
-          <div className="px-3 pt-2 flex items-center gap-1.5">
-            <div className="w-1 h-1 rounded-full bg-yellow-400 animate-pulse" />
-            <span className="text-[9px] text-yellow-400/80 font-medium uppercase tracking-wider">Preview — awaiting approval</span>
-          </div>
-        )}
-        <div className="overflow-y-auto" style={{ maxHeight: '380px' }}>
-          {platform === 'linkedin'  && <LinkedInPreview  content={content} imageUrl={draft?.image_url} />}
-          {platform === 'instagram' && <InstagramPreview content={content} imageUrl={draft?.image_url} />}
-          {platform === 'facebook'  && <FacebookPreview  content={content} imageUrl={draft?.image_url} />}
-        </div>
-      </div>
-
-      {/* Validation warnings */}
-      {draft?.validation_errors && (
-        <div className="text-[11px] bg-yellow-950/50 border border-yellow-800/40 rounded-xl p-3 text-yellow-300 space-y-1">
-          <div className="font-medium text-yellow-400 mb-1">Validation warnings</div>
-          {Object.entries(draft.validation_errors).map(([k, v]) => (
-            <div key={k} className="flex gap-1.5">
-              <span className="text-yellow-600 shrink-0">·</span>
-              <span>{String(v)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Edit textarea */}
-      {!readOnly && (
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-medium text-gray-400">Edit</label>
-            <span className={`text-[11px] ${charClass(content.length, limits)}`}>
-              {content.length} / {limits[0]}–{limits[1]}
-            </span>
-          </div>
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={(e) => onContentChange(e.target.value)}
-            disabled={!isSelected}
-            className="w-full min-h-28 bg-gray-800/70 rounded-xl p-3 text-xs text-gray-100 resize-none focus:outline-none focus:ring-1 focus:ring-blue-600/50 leading-relaxed border border-gray-700/50 hover:border-gray-600/60 transition-colors disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
-            aria-label={`${PLATFORM_LABELS[platform]} post content`}
-          />
-          {!isSelected && (
-            <p className="text-[10px] text-gray-700 mt-1 text-center">Skipped — will not publish</p>
-          )}
-        </div>
-      )}
-
-      {/* Read-only content box */}
-      {readOnly && (
-        <div className="bg-gray-800/40 rounded-xl border border-gray-700/40 p-3">
-          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Final content</p>
-          <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">{content}</p>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -312,7 +236,9 @@ function PlatformColumn({ run, platform, content, isSelected, onContentChange, o
 // ─── Main PostEditor (awaiting_review) ────────────────────────────────────────
 
 export default function PostEditor({ run }: { run: RunDetail }) {
+  const [activeTab, setActiveTab]           = useState<PlatformType>('facebook');
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
+  const [mobilePanel, setMobilePanel]       = useState<'preview' | 'edit'>('edit');
 
   const editBuffers          = useAppStore((s) => s.editBuffers[run.id]);
   const setEditBuffer        = useAppStore((s) => s.setEditBuffer);
@@ -336,6 +262,19 @@ export default function PostEditor({ run }: { run: RunDetail }) {
   const buffers            = editBuffers ?? {};
   const isPlatformSelected = (p: PlatformType) => (platformSelections ?? {})[p] !== false;
   const selectedPlatforms  = PLATFORMS.filter(isPlatformSelected);
+
+  const draft        = getDraft(run, activeTab);
+  const content      = buffers[activeTab] ?? draft?.final_content ?? '';
+  const limits       = CHAR_LIMITS[activeTab];
+  const style        = PLATFORM_STYLE[activeTab];
+  const textareaRef  = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [content, activeTab]);
 
   const handleApprove = async () => {
     const posts = {
@@ -362,13 +301,13 @@ export default function PostEditor({ run }: { run: RunDetail }) {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-gray-900 rounded-2xl border border-gray-800/80 shadow-xl overflow-hidden animate-fade-in" data-testid="post-editor">
+    <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800/80 shadow-sm dark:shadow-xl overflow-hidden animate-fade-in" data-testid="post-editor">
 
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
+      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
         <div>
-          <h3 className="text-sm font-semibold text-gray-100">Review Posts</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Preview and edit each platform before publishing — use the checkboxes to skip platforms</p>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Review Posts</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Preview and edit each platform before publishing</p>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 shrink-0">
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
@@ -376,37 +315,133 @@ export default function PostEditor({ run }: { run: RunDetail }) {
         </div>
       </div>
 
-      {/* 3-column grid */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-5">
-        <div className="grid grid-cols-3 gap-5">
-          {PLATFORMS.map((platform) => (
-            <PlatformColumn
-              key={platform}
-              run={run}
-              platform={platform}
-              content={buffers[platform] ?? getDraft(run, platform)?.final_content ?? ''}
-              isSelected={isPlatformSelected(platform)}
-              onContentChange={(c) => setEditBuffer(run.id, platform, c)}
-              onToggleSelected={() => setPlatformSelection(run.id, platform, !isPlatformSelected(platform))}
+      {/* Tab bar — dot shows include/skip state */}
+      <PlatformTabs
+        active={activeTab}
+        onSelect={setActiveTab}
+        dotColor={(p) => isPlatformSelected(p) ? 'bg-blue-400' : 'bg-gray-700'}
+      />
+
+      {/* Mobile panel toggle — hidden on desktop */}
+      <div className="flex md:hidden shrink-0 border-b border-gray-200 dark:border-gray-800/60">
+        <button
+          onClick={() => setMobilePanel('edit')}
+          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+            mobilePanel === 'edit'
+              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
+              : 'text-gray-500 dark:text-gray-400'
+          }`}
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => setMobilePanel('preview')}
+          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+            mobilePanel === 'preview'
+              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
+              : 'text-gray-500 dark:text-gray-400'
+          }`}
+        >
+          Preview
+        </button>
+      </div>
+
+      {/* Split view */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+
+        {/* Left — post preview */}
+        <div className={`${mobilePanel === 'preview' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 border-r border-gray-200 dark:border-gray-800/60 overflow-y-auto p-4 md:p-5`}>
+          <div className={`max-w-[480px] mx-auto rounded-xl border ${style.border} overflow-hidden bg-white dark:bg-gray-950/60 shadow-lg shrink-0`}>
+            <div className="px-4 py-3 flex items-center gap-2 border-b border-yellow-500/10">
+              <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+              <span className="text-[11px] text-yellow-400/80 font-medium uppercase tracking-wider">Preview — awaiting approval</span>
+            </div>
+            {activeTab === 'linkedin'  && <LinkedInPreview  content={content} imageUrl={draft?.image_url} />}
+            {activeTab === 'instagram' && <InstagramPreview content={content} imageUrl={draft?.image_url} />}
+            {activeTab === 'facebook'  && <FacebookPreview  content={content} imageUrl={draft?.image_url} />}
+          </div>
+        </div>
+
+        {/* Right — edit panel */}
+        <div className={`${mobilePanel === 'edit' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 overflow-y-auto p-4 md:p-5`}>
+          <div className="max-w-[480px] mx-auto flex flex-col gap-4">
+
+          {/* Include / skip toggle */}
+          <div className="flex items-center justify-between">
+            <span className={`text-sm font-semibold ${style.text}`}>{PLATFORM_LABELS[activeTab]}</span>
+            <button
+              role="checkbox"
+              aria-checked={isPlatformSelected(activeTab)}
+              onClick={() => setPlatformSelection(run.id, activeTab, !isPlatformSelected(activeTab))}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                isPlatformSelected(activeTab)
+                  ? 'border-blue-600/50 bg-blue-600/10 text-blue-500 dark:text-blue-400'
+                  : 'border-gray-300 dark:border-gray-700/50 bg-gray-100 dark:bg-gray-800/40 text-gray-500'
+              }`}
+            >
+              {isPlatformSelected(activeTab) ? (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  Included
+                </>
+              ) : 'Skipped'}
+            </button>
+          </div>
+
+          {/* Validation warnings */}
+          {draft?.validation_errors && (
+            <div className="text-[11px] bg-yellow-50 dark:bg-yellow-950/50 border border-yellow-200 dark:border-yellow-800/40 rounded-xl p-3 text-yellow-700 dark:text-yellow-300 space-y-1">
+              <div className="font-medium text-yellow-600 dark:text-yellow-400 mb-1">Validation warnings</div>
+              {Object.entries(draft.validation_errors).map(([k, v]) => (
+                <div key={k} className="flex gap-1.5">
+                  <span className="text-yellow-500 dark:text-yellow-600 shrink-0">·</span>
+                  <span>{String(v)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Edit textarea */}
+          <div className="flex flex-col">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Content</label>
+              <span className={`text-[11px] ${charClass(content.length, limits)}`}>
+                {content.length} / {limits[0]}–{limits[1]}
+              </span>
+            </div>
+            <textarea
+              ref={textareaRef}
+              key={activeTab}
+              value={content}
+              onChange={(e) => setEditBuffer(run.id, activeTab, e.target.value)}
+              disabled={!isPlatformSelected(activeTab)}
+              className="w-full min-h-48 bg-gray-100 dark:bg-gray-800/70 rounded-xl p-3 text-xs text-gray-900 dark:text-gray-100 resize-none focus:outline-none focus:ring-1 focus:ring-blue-600/50 leading-relaxed border border-gray-200 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600/60 transition-colors disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
+              aria-label={`${PLATFORM_LABELS[activeTab]} post content`}
             />
-          ))}
+            {!isPlatformSelected(activeTab) && (
+              <p className="text-[10px] text-gray-300 dark:text-gray-700 mt-1 text-center">Skipped — will not publish</p>
+            )}
+          </div>
+          </div>
         </div>
       </div>
 
       {/* Action bar */}
-      <div className="flex items-center justify-between px-5 pb-5 pt-3 gap-3 border-t border-gray-800/60 shrink-0">
+      <div className="flex items-center justify-between px-4 md:px-5 pb-4 md:pb-5 pt-3 gap-2 md:gap-3 border-t border-gray-200 dark:border-gray-800/60 shrink-0">
         <button
           onClick={() => setShowRejectConfirm(true)}
-          className="px-4 py-2 rounded-xl text-sm text-red-400 border border-red-800/50 hover:bg-red-950/40 hover:border-red-700/60 transition-all"
+          className="px-3 md:px-4 py-2 rounded-xl text-sm text-red-500 dark:text-red-400 border border-red-200 dark:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:border-red-300 dark:hover:border-red-700/60 transition-all"
         >
           Reject
         </button>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
           {selectedPlatforms.length === 0 ? (
-            <span className="text-xs text-gray-600">Select at least one platform</span>
+            <span className="hidden sm:inline text-xs text-gray-400 dark:text-gray-600">Select at least one platform</span>
           ) : (
-            <span className="text-xs text-gray-500">
+            <span className="hidden sm:inline text-xs text-gray-500">
               Publishing to {selectedPlatforms.length} platform{selectedPlatforms.length > 1 ? 's' : ''}
             </span>
           )}
@@ -430,19 +465,19 @@ export default function PostEditor({ run }: { run: RunDetail }) {
       {/* Reject confirmation modal */}
       {showRejectConfirm && (
         <div className="fixed inset-0 z-40 overflow-y-auto animate-fade-in">
-          <div className="flex min-h-full items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-            <div className="bg-gray-900 rounded-2xl border border-gray-700/60 p-6 w-80 shadow-2xl animate-slide-up">
+          <div className="flex min-h-full items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl border border-gray-200 dark:border-gray-700/60 p-6 w-full sm:w-80 shadow-2xl animate-slide-up">
               <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
                 <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                 </svg>
               </div>
-              <h3 className="text-sm font-semibold text-gray-100 mb-1">Reject this run?</h3>
-              <p className="text-xs text-gray-400 mb-5">Nothing will be posted. This action cannot be undone.</p>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Reject this run?</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-5">Nothing will be posted. This action cannot be undone.</p>
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => setShowRejectConfirm(false)}
-                  className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors rounded-xl hover:bg-gray-800"
+                  className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   Cancel
                 </button>
@@ -465,42 +500,91 @@ export default function PostEditor({ run }: { run: RunDetail }) {
 // ─── Read-only review (shown when "Review" stage filter active on a completed run) ──
 
 export function DraftReview({ run, onClear }: { run: RunDetail; onClear: () => void }) {
+  const [activeTab, setActiveTab]   = useState<PlatformType>('facebook');
+  const [mobilePanel, setMobilePanel] = useState<'preview' | 'content'>('content');
+
+  const draft   = getDraft(run, activeTab);
+  const content = draft?.final_content ?? '';
+  const style   = PLATFORM_STYLE[activeTab];
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-gray-900 rounded-2xl border border-gray-800/80 shadow-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
+    <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800/80 shadow-sm dark:shadow-xl overflow-hidden">
+
+      {/* Header */}
+      <div className="px-4 md:px-5 py-3 md:py-4 border-b border-gray-200 dark:border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
-          <span className="text-sm font-semibold text-gray-200">Generated Posts</span>
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Generated Posts</span>
           <span className="text-[10px] bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full font-medium">
             Read-only
           </span>
         </div>
         <button
           onClick={onClear}
-          className="text-xs text-gray-500 hover:text-gray-300 transition-colors underline"
+          className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors underline shrink-0"
         >
           Show activity log
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-5">
-        <div className="grid grid-cols-3 gap-5">
-          {PLATFORMS.map((platform) => {
-            const draft = getDraft(run, platform);
-            if (!draft) return null;
-            return (
-              <PlatformColumn
-                key={platform}
-                run={run}
-                platform={platform}
-                content={draft.final_content}
-                isSelected={true}
-                onContentChange={() => {}}
-                onToggleSelected={() => {}}
-                readOnly
-              />
-            );
-          })}
+      {/* Tab bar */}
+      <PlatformTabs active={activeTab} onSelect={setActiveTab} />
+
+      {/* Mobile panel toggle */}
+      <div className="flex md:hidden shrink-0 border-b border-gray-200 dark:border-gray-800/60">
+        <button
+          onClick={() => setMobilePanel('content')}
+          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+            mobilePanel === 'content'
+              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
+              : 'text-gray-500 dark:text-gray-400'
+          }`}
+        >
+          Content
+        </button>
+        <button
+          onClick={() => setMobilePanel('preview')}
+          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+            mobilePanel === 'preview'
+              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
+              : 'text-gray-500 dark:text-gray-400'
+          }`}
+        >
+          Preview
+        </button>
+      </div>
+
+      {/* Split view */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+
+        {/* Left — post preview */}
+        <div className={`${mobilePanel === 'preview' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 border-r border-gray-200 dark:border-gray-800/60 overflow-y-auto p-4 md:p-5`}>
+          {draft ? (
+            <div className={`max-w-[480px] mx-auto rounded-xl border ${style.border} overflow-hidden bg-white dark:bg-gray-950/60 shadow-lg shrink-0`}>
+              {activeTab === 'linkedin'  && <LinkedInPreview  content={content} imageUrl={draft.image_url} />}
+              {activeTab === 'instagram' && <InstagramPreview content={content} imageUrl={draft.image_url} />}
+              {activeTab === 'facebook'  && <FacebookPreview  content={content} imageUrl={draft.image_url} />}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 dark:text-gray-600">No draft generated for this platform.</p>
+          )}
+        </div>
+
+        {/* Right — read-only content */}
+        <div className={`${mobilePanel === 'content' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 overflow-y-auto p-4 md:p-5`}>
+          <div className="max-w-[480px] mx-auto w-full">
+          {draft ? (
+            <div className="flex flex-col gap-3">
+              <span className={`text-sm font-semibold ${style.text}`}>{PLATFORM_LABELS[activeTab]}</span>
+              <div className="bg-gray-50 dark:bg-gray-800/40 rounded-xl border border-gray-200 dark:border-gray-700/40 p-4">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Final content</p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{content}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 dark:text-gray-600">No content available.</p>
+          )}
+          </div>
         </div>
       </div>
     </div>

@@ -17,10 +17,10 @@ function stageIndex(status: RunStatus): number {
 }
 
 const STATUS_BADGE: Partial<Record<RunStatus, string>> = {
-  completed: 'bg-green-500/15 text-green-400 border-green-500/25',
-  partial:   'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
-  rejected:  'bg-gray-500/15 text-gray-400 border-gray-500/25',
-  failed:    'bg-red-500/15 text-red-400 border-red-500/25',
+  completed: 'bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/25',
+  partial:   'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/25',
+  rejected:  'bg-gray-500/15 text-gray-500 border-gray-500/25',
+  failed:    'bg-red-500/15 text-red-500 dark:text-red-400 border-red-500/25',
 };
 
 function CheckIcon() {
@@ -51,14 +51,14 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
   const isFailed   = run.status === 'failed' || run.status === 'rejected';
 
   return (
-    <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800/80 shadow-xl">
+    <div className="shrink-0 bg-white dark:bg-gray-900 rounded-2xl p-4 md:p-6 border border-gray-200 dark:border-gray-800/80 shadow-sm dark:shadow-xl">
       <div className="flex items-start justify-between mb-2 gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-gray-200">Run</span>
-          <span className="font-mono text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded-md">
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Run</span>
+          <span className="font-mono text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-md">
             {run.id.slice(0, 8)}
           </span>
-          <span className="text-xs text-gray-400 bg-gray-800/60 px-2 py-0.5 rounded-md">
+          <span className="text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800/60 px-2 py-0.5 rounded-md">
             {run.triggered_by === 'schedule' ? '⏰ scheduled' : '◎ manual'}
           </span>
         </div>
@@ -80,10 +80,12 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
         </p>
       )}
       {!activeFilter && isTerminal && (
-        <p className="text-xs text-gray-600 mb-4">Click a stage to filter the activity log</p>
+        <p className="text-xs text-gray-400 dark:text-gray-600 mb-4">Click a stage to filter the activity log</p>
       )}
 
-      <div className="flex items-center">
+      {/* Horizontally scrollable on mobile; py/my pair gives the ring-offset room to render */}
+      <div className="overflow-x-auto -mx-4 px-4 py-2 -my-2 md:mx-0 md:px-0">
+      <div className="flex items-center min-w-[340px]">
         {STAGES.map((stage, i) => {
           const isActive      = i === activeIdx && !isTerminal;
           const isDone        = i < activeIdx || (isTerminal && !isFailed);
@@ -103,12 +105,12 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
                   className={[
                     'w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300',
                     isReachable ? 'cursor-pointer' : 'cursor-default',
-                    isFiltered ? 'ring-2 ring-offset-2 ring-offset-gray-900 ring-blue-400 scale-110' : '',
+                    isFiltered ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-gray-900 ring-blue-400 scale-110' : '',
                     isActive      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 animate-pulse-ring' : '',
                     isDone        ? 'bg-green-600/25 text-green-400 border border-green-600/40 hover:bg-green-600/40 hover:border-green-500/60' : '',
                     isStageFailed ? 'bg-red-600/25 text-red-400 border border-red-600/40 hover:bg-red-600/40' : '',
                     !isActive && !isDone && !isStageFailed
-                      ? 'bg-gray-800 text-gray-600 border border-gray-700/60'
+                      ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border border-gray-300/60 dark:border-gray-700/60'
                       : '',
                   ].filter(Boolean).join(' ')}
                 >
@@ -118,9 +120,9 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
                 <span className={`text-[11px] font-medium text-center transition-colors ${
                   isFiltered    ? 'text-blue-400' :
                   isActive      ? 'text-blue-400' :
-                  isDone        ? 'text-green-400/60' :
+                  isDone        ? 'text-green-500 dark:text-green-400/60' :
                   isStageFailed ? 'text-red-400/60' :
-                  'text-gray-600'
+                  'text-gray-400 dark:text-gray-600'
                 }`}>
                   {stage.label}
                 </span>
@@ -128,7 +130,7 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
 
               {i < STAGES.length - 1 && (
                 <div className="relative flex-1 mb-6 mx-1">
-                  <div className="h-px bg-gray-800 w-full" />
+                  <div className="h-px bg-gray-200 dark:bg-gray-800 w-full" />
                   <div
                     className={`absolute inset-y-0 left-0 h-px transition-all duration-700 ${
                       i < activeIdx || (isTerminal && !isFailed) ? 'bg-green-600/50 w-full' : 'w-0'
@@ -140,10 +142,11 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
           );
         })}
       </div>
+      </div>
 
       {run.property_url && (
         <div className="mt-5 flex items-center gap-2 text-xs">
-          <svg className="w-3.5 h-3.5 text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-3.5 h-3.5 text-gray-400 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
           </svg>
           <a
@@ -158,7 +161,7 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
       )}
 
       {run.error_message && (run.status === 'failed' || run.status === 'rejected') && (
-        <div className="mt-4 text-xs text-red-400 bg-red-950/30 rounded-xl p-3 font-mono break-all border border-red-900/40">
+        <div className="mt-4 text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-xl p-3 font-mono break-all border border-red-200 dark:border-red-900/40">
           {run.error_message}
         </div>
       )}

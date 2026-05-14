@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import ErrorBoundary from './components/ErrorBoundary';
 import ManualTrigger from './components/ManualTrigger';
@@ -10,6 +10,39 @@ import ToastContainer from './components/Toast';
 import { useAppStore } from './store';
 import { useRun } from './hooks/useRuns';
 import { useRunStream } from './hooks/useRunStream';
+import { useTheme } from './hooks/useTheme';
+
+function SunIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+    </svg>
+  );
+}
+
+function HamburgerIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
 
 function RunDetail({ runId }: { runId: string }) {
   const { data: run } = useRun(runId);
@@ -43,7 +76,7 @@ function RunDetail({ runId }: { runId: string }) {
     && run.status !== 'awaiting_review';
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-5 animate-fade-in">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 md:gap-5 animate-fade-in">
       <PipelineView run={run} activeFilter={stageFilter} onStageClick={handleStageClick} />
       {run.status === 'awaiting_review' ? (
         <PostEditor run={run} />
@@ -58,48 +91,104 @@ function RunDetail({ runId }: { runId: string }) {
 
 export default function App() {
   const selectedRunId = useAppStore((s) => s.selectedRunId);
+  const { isDark, toggle } = useTheme();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Auto-close sidebar on mobile when a run is selected
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [selectedRunId]);
 
   return (
     <ErrorBoundary>
-      {/* h-screen + flex-col eliminates the body scrollbar entirely */}
-      <div className="h-screen flex flex-col bg-gray-950 text-gray-100 overflow-hidden">
-        <header className="flex-none border-b border-gray-800/80 px-6 py-3.5 flex items-center justify-between bg-gray-950/95 backdrop-blur-sm z-30">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-900/40">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 overflow-hidden">
+
+        {/* Header */}
+        <header className="sticky top-0 z-40 shrink-0 border-b border-gray-200 dark:border-gray-800/80 px-4 md:px-6 py-3 md:py-3.5 flex items-center justify-between bg-gray-50/95 dark:bg-gray-950/95 backdrop-blur-sm">
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* Hamburger — mobile only */}
+            <button
+              onClick={() => setSidebarOpen((o) => !o)}
+              className="md:hidden p-2 -ml-1 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label={sidebarOpen ? 'Close run history' : 'Open run history'}
+            >
+              {sidebarOpen ? <CloseIcon /> : <HamburgerIcon />}
+            </button>
+
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-900/40 shrink-0">
+              <svg className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-tight text-gray-100 leading-none">Social Agent</h1>
-              <p className="text-xs text-gray-600 leading-none mt-0.5">Real Estate Automation</p>
+              <h1 className="text-sm font-semibold tracking-tight text-gray-900 dark:text-gray-100 leading-none">Social Agent</h1>
+              <p className="hidden sm:block text-xs text-gray-400 dark:text-gray-600 leading-none mt-0.5">Real Estate Automation</p>
             </div>
           </div>
-          <ManualTrigger />
+
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <button
+              onClick={toggle}
+              className="p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDark ? <SunIcon /> : <MoonIcon />}
+            </button>
+            <ManualTrigger />
+          </div>
         </header>
 
-        {/* flex-1 min-h-0 lets this row shrink to fit the remaining viewport height */}
-        <div className="flex flex-1 min-h-0">
-          <aside className="w-72 border-r border-gray-800/80 overflow-y-auto shrink-0">
+        {/* Body */}
+        <div className="relative flex flex-1 min-h-0">
+
+          {/* Mobile backdrop */}
+          <div
+            className={`fixed inset-0 z-20 bg-black/50 backdrop-blur-sm md:hidden transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            onClick={() => setSidebarOpen(false)}
+          />
+
+          {/* Sidebar — drawer on mobile, static on desktop */}
+          <aside className={`
+            fixed md:static inset-y-0 left-0 z-30 w-72 shrink-0
+            border-r border-gray-200 dark:border-gray-800/80
+            overflow-y-auto
+            bg-gray-50 dark:bg-gray-950
+            transition-transform duration-200 ease-in-out
+            md:translate-x-0
+            ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+          `}>
             <RunHistory />
           </aside>
 
-          <main className="flex-1 min-h-0 overflow-hidden p-6 flex flex-col">
+          {/* Main content */}
+          <main className="p-4 md:p-6 flex-1 min-h-0 overflow-hidden flex flex-col">
             {selectedRunId ? (
               <ErrorBoundary>
                 <RunDetail key={selectedRunId} runId={selectedRunId} />
               </ErrorBoundary>
             ) : (
-              <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center animate-fade-in">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-xl shadow-blue-900/40">
-                  <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center animate-fade-in px-4">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-xl shadow-blue-900/40">
+                  <svg className="w-7 h-7 md:w-8 md:h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-gray-400 text-sm font-medium">No run selected</p>
-                  <p className="text-gray-700 text-xs mt-1">Select a run from the sidebar or trigger a new one</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">No run selected</p>
+                  <p className="text-gray-400 dark:text-gray-700 text-xs mt-1">
+                    <span className="md:hidden">Tap the menu to browse runs or </span>
+                    <span className="hidden md:inline">Select a run from the sidebar or </span>
+                    trigger a new one
+                  </p>
                 </div>
+                {/* Mobile shortcut to open sidebar */}
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="md:hidden flex items-center gap-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <HamburgerIcon />
+                  Browse runs
+                </button>
               </div>
             )}
           </main>

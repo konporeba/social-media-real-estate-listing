@@ -137,25 +137,25 @@ function RunRow({ run }: { run: Run }) {
   return (
     <div
       onClick={() => setSelectedRunId(isSelected ? null : run.id)}
-      className={`group px-4 py-3.5 cursor-pointer border-b border-gray-800/40 transition-all duration-150 border-l-2 ${
+      className={`group px-4 py-3.5 cursor-pointer border-b border-gray-200/40 dark:border-gray-800/40 transition-all duration-150 border-l-2 ${
         isSelected
-          ? 'bg-gray-800/50 border-l-blue-500'
-          : 'border-l-transparent hover:bg-gray-800/25 hover:border-l-gray-700'
+          ? 'bg-blue-50 dark:bg-gray-800/50 border-l-blue-500'
+          : 'border-l-transparent hover:bg-gray-100 dark:hover:bg-gray-800/25 hover:border-l-gray-200 dark:hover:border-l-gray-700'
       }`}
     >
       <div className="flex items-start justify-between gap-2 mb-0.5">
-        <span className="text-xs font-medium text-gray-300 leading-tight line-clamp-2">{title}</span>
+        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight line-clamp-2">{title}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           <div className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
           <span className={`text-[10px] font-medium ${cfg.text}`}>{cfg.label}</span>
         </div>
       </div>
       <div className="flex items-center gap-1.5 mt-0.5">
-        <span className="text-xs text-gray-600">{formatDate(run.created_at)}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(run.created_at)}</span>
         {duration && (
           <>
-            <span className="text-xs text-gray-700">·</span>
-            <span className="text-xs text-gray-700">{duration}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">·</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{duration}</span>
           </>
         )}
       </div>
@@ -186,14 +186,14 @@ export default function RunHistory() {
 
   return (
     <div>
-      <div className="px-4 py-3 border-b border-gray-800/80 flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Run History</span>
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800/80 flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Run History</span>
         {!!runs?.length && (
-          <span className="text-[10px] text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded-full">{runs.length}</span>
+          <span className="text-[10px] text-gray-600 dark:text-gray-400 bg-gray-200 dark:bg-gray-800 px-1.5 py-0.5 rounded-full">{runs.length}</span>
         )}
       </div>
       {isLoading && (
-        <div className="p-4 text-xs text-gray-600 flex items-center gap-2">
+        <div className="p-4 text-xs text-gray-400 dark:text-gray-600 flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
           Loading…
         </div>
@@ -201,7 +201,7 @@ export default function RunHistory() {
       {error && <div className="p-4 text-xs text-red-400/80">Failed to load runs.</div>}
       {runs?.map((run) => <RunRow key={run.id} run={run} />)}
       {!isLoading && !error && !runs?.length && (
-        <div className="p-6 text-center text-xs text-gray-700">No runs yet.</div>
+        <div className="p-6 text-center text-xs text-gray-400 dark:text-gray-700">No runs yet.</div>
       )}
     </div>
   );

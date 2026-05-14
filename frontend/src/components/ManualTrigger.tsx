@@ -30,7 +30,7 @@ export default function ManualTrigger() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30"
+        className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -43,7 +43,7 @@ export default function ManualTrigger() {
           <div className="flex min-h-full items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <form
             onSubmit={handleSubmit}
-            className="bg-gray-900 rounded-2xl border border-gray-700/60 p-6 w-96 shadow-2xl animate-slide-up"
+            className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl border border-gray-200 dark:border-gray-700/60 p-5 md:p-6 w-full max-w-md shadow-2xl animate-slide-up"
           >
             <div className="flex items-center gap-3 mb-5">
               <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-600/30 flex items-center justify-center shrink-0">
@@ -52,31 +52,31 @@ export default function ManualTrigger() {
                 </svg>
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-gray-100">Trigger new run</h2>
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Trigger new run</h2>
                 <p className="text-xs text-gray-500">Manually start the pipeline</p>
               </div>
             </div>
 
             <div className="mb-5">
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
                 Property URL
-                <span className="text-gray-600 font-normal ml-1">(optional)</span>
+                <span className="text-gray-400 dark:text-gray-600 font-normal ml-1">(optional)</span>
               </label>
               <input
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://dprealestate.es/..."
-                className="w-full bg-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-600/60 border border-gray-700/60 placeholder:text-gray-600 hover:border-gray-600/60 transition-colors"
+                className="w-full bg-gray-100 dark:bg-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-600/60 border border-gray-200 dark:border-gray-700/60 placeholder:text-gray-400 dark:placeholder:text-gray-600 hover:border-gray-300 dark:hover:border-gray-600/60 transition-colors"
               />
-              <p className="text-[11px] text-gray-600 mt-1.5">Leave blank for auto-discovery</p>
+              <p className="text-[11px] text-gray-400 dark:text-gray-600 mt-1.5">Leave blank for auto-discovery</p>
             </div>
 
             <div className="flex gap-3 justify-end">
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors rounded-xl hover:bg-gray-800"
+                className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 Cancel
               </button>

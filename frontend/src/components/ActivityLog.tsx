@@ -4,11 +4,11 @@ import type { RunEvent } from '../types';
 // ─── Agent badge config ───────────────────────────────────────────────────────
 
 const AGENT_CONFIG: Record<string, { badge: string; dot: string; label: string }> = {
-  orchestrator: { badge: 'bg-purple-500/15 text-purple-300 border-purple-500/25', dot: 'bg-purple-400', label: 'Orchestrator' },
-  discovery:    { badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/25',       dot: 'bg-cyan-400',   label: 'Discovery'    },
-  content:      { badge: 'bg-blue-500/15 text-blue-300 border-blue-500/25',       dot: 'bg-blue-400',   label: 'Content'      },
-  validation:   { badge: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/25', dot: 'bg-yellow-400', label: 'Validation'   },
-  publishing:   { badge: 'bg-green-500/15 text-green-300 border-green-500/25',    dot: 'bg-green-400',  label: 'Publishing'   },
+  orchestrator: { badge: 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/25', dot: 'bg-purple-400', label: 'Orchestrator' },
+  discovery:    { badge: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/25',         dot: 'bg-cyan-400',   label: 'Discovery'    },
+  content:      { badge: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/25',         dot: 'bg-blue-400',   label: 'Content'      },
+  validation:   { badge: 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/25', dot: 'bg-yellow-400', label: 'Validation'   },
+  publishing:   { badge: 'bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/25',     dot: 'bg-green-400',  label: 'Publishing'   },
 };
 
 // ─── Stage filter mapping ─────────────────────────────────────────────────────
@@ -200,22 +200,22 @@ function EventRow({ event, isLast }: { event: RunEvent; isLast: boolean }) {
   return (
     <div className="flex gap-3 animate-fade-in">
       <div className="flex flex-col items-center shrink-0 pt-1.5">
-        <div className={`w-2 h-2 rounded-full shrink-0 ring-2 ring-gray-900 ${cfg.dot}`} />
-        {!isLast && <div className="w-px flex-1 bg-gray-800/80 mt-1.5" />}
+        <div className={`w-2 h-2 rounded-full shrink-0 ring-2 ring-white dark:ring-gray-900 ${cfg.dot}`} />
+        {!isLast && <div className="w-px flex-1 bg-gray-200 dark:bg-gray-800/80 mt-1.5" />}
       </div>
 
-      <div className={`flex-1 ${isLast ? 'pb-0' : 'pb-5'}`}>
-        <div className="flex items-start justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${cfg.badge}`}>
-              {cfg.label} Agent
-            </span>
-            <span className="text-sm text-gray-200 font-medium leading-tight">{info.label}</span>
-          </div>
-          <span className="text-[10px] text-gray-600 font-mono tabular-nums shrink-0 pt-0.5">
+      <div className={`flex-1 min-w-0 ${isLast ? 'pb-0' : 'pb-5'}`}>
+        {/* Badge + timestamp always on the same row — both are short, never wrap */}
+        <div className="flex items-center justify-between gap-2 mb-0.5">
+          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${cfg.badge}`}>
+            {cfg.label} Agent
+          </span>
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 font-mono tabular-nums shrink-0">
             {new Date(event.created_at).toLocaleTimeString('pl-PL', { hour12: false })}
           </span>
         </div>
+        {/* Event label gets its own full-width row — never competes for space */}
+        <span className="text-sm text-gray-800 dark:text-gray-200 font-medium leading-tight">{info.label}</span>
         <p className="text-xs text-gray-500 mt-1 leading-relaxed">{detail}</p>
       </div>
     </div>
@@ -244,11 +244,11 @@ export default function ActivityLog({ events, stageFilter, onClearFilter }: Acti
     : events;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-gray-900 rounded-2xl border border-gray-800/80 shadow-xl">
-      <div className="px-5 py-4 border-b border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
+    <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800/80 shadow-sm dark:shadow-xl">
+      <div className="px-4 md:px-5 py-3 md:py-4 border-b border-gray-200 dark:border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-          <span className="text-sm font-semibold text-gray-200">Activity Log</span>
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Activity Log</span>
           {stageFilter && (
             <span className="text-[10px] bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded-full capitalize font-medium">
               {stageFilter}
@@ -259,28 +259,28 @@ export default function ActivityLog({ events, stageFilter, onClearFilter }: Acti
           {stageFilter && (
             <button
               onClick={onClearFilter}
-              className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors underline"
+              className="text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors underline"
             >
               Clear filter
             </button>
           )}
-          <span className="text-[10px] text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full font-mono">
+          <span className="text-[10px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full font-mono">
             {visible.length}{stageFilter && events.length !== visible.length ? `/${events.length}` : ''} events
           </span>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-5 py-4">
         {visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 gap-2.5 text-gray-600">
-            <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center">
-              <div className="w-2 h-2 rounded-full bg-gray-700 animate-pulse" />
+          <div className="flex flex-col items-center justify-center py-10 gap-2.5 text-gray-400 dark:text-gray-600">
+            <div className="w-8 h-8 rounded-full border border-gray-200 dark:border-gray-800 flex items-center justify-center">
+              <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-700 animate-pulse" />
             </div>
             <span className="text-xs">
               {stageFilter ? `No events recorded for the ${stageFilter} stage.` : 'Waiting for pipeline events…'}
             </span>
             {stageFilter && (
-              <button onClick={onClearFilter} className="text-xs text-blue-400/70 hover:text-blue-300 underline transition-colors">
+              <button onClick={onClearFilter} className="text-xs text-blue-500 dark:text-blue-400/70 hover:text-blue-600 dark:hover:text-blue-300 underline transition-colors">
                 Show all events
               </button>
             )}
