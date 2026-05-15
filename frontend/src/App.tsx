@@ -130,7 +130,7 @@ export default function App() {
               </svg>
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-tight text-gray-900 dark:text-gray-100 leading-none">Social Agent</h1>
+              <h1 className="text-sm font-semibold tracking-tight text-gray-900 dark:text-gray-100 leading-none">Real Estate Agent</h1>
               <p className="hidden sm:block text-xs text-gray-400 dark:text-gray-600 leading-none mt-0.5">Real Estate Automation</p>
             </div>
           </div>

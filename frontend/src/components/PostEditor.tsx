@@ -77,7 +77,7 @@ function LinkedInPreview({ content, imageUrl }: { content: string; imageUrl?: st
       <div className="px-3 pt-3 pb-2 flex items-start gap-2.5">
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-xs font-bold shrink-0">SA</div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-gray-100 leading-tight">Social Agent</p>
+          <p className="text-xs font-semibold text-gray-100 leading-tight">Real Estate Agent</p>
           <p className="text-[11px] text-gray-400 leading-tight">Real Estate Specialist</p>
           <p className="text-[10px] text-gray-600 mt-0.5">2h · 🌐</p>
         </div>
@@ -164,7 +164,7 @@ function FacebookPreview({ content, imageUrl }: { content: string; imageUrl?: st
       <div className="px-3 pt-3 pb-2 flex items-start gap-2.5">
         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-white text-xs font-bold shrink-0">SA</div>
         <div className="flex-1">
-          <span className="text-xs font-semibold text-gray-100">Social Agent RE</span>
+          <span className="text-xs font-semibold text-gray-100">Real Estate Agent RE</span>
           <span className="text-[11px] text-[#4599f0] ml-1.5 cursor-pointer hover:underline">· Follow</span>
           <p className="text-[10px] text-gray-500">2h · 🌐</p>
         </div>
