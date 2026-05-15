@@ -93,8 +93,9 @@ export default function App() {
   const selectedRunId = useAppStore((s) => s.selectedRunId);
   const { isDark, toggle } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
-  // Auto-close sidebar on mobile when a run is selected
+  // Auto-close mobile drawer when a run is selected
   useEffect(() => {
     setSidebarOpen(false);
   }, [selectedRunId]);
@@ -106,13 +107,21 @@ export default function App() {
         {/* Header */}
         <header className="sticky top-0 z-40 shrink-0 border-b border-gray-200 dark:border-gray-800/80 px-4 md:px-6 py-3 md:py-3.5 flex items-center justify-between bg-gray-50/95 dark:bg-gray-950/95 backdrop-blur-sm">
           <div className="flex items-center gap-2 md:gap-3">
-            {/* Hamburger — mobile only */}
+            {/* Hamburger — mobile drawer toggle */}
             <button
               onClick={() => setSidebarOpen((o) => !o)}
               className="md:hidden p-2 -ml-1 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               aria-label={sidebarOpen ? 'Close run history' : 'Open run history'}
             >
               {sidebarOpen ? <CloseIcon /> : <HamburgerIcon />}
+            </button>
+            {/* Sidebar toggle — desktop only */}
+            <button
+              onClick={() => setDesktopSidebarOpen((o) => !o)}
+              className="hidden md:flex p-2 -ml-1 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label={desktopSidebarOpen ? 'Hide run history' : 'Show run history'}
+            >
+              {desktopSidebarOpen ? <CloseIcon /> : <HamburgerIcon />}
             </button>
 
             <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-900/40 shrink-0">
@@ -154,8 +163,8 @@ export default function App() {
             overflow-y-auto
             bg-gray-50 dark:bg-gray-950
             transition-transform duration-200 ease-in-out
-            md:translate-x-0
             ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+            ${desktopSidebarOpen ? 'md:translate-x-0' : 'md:hidden'}
           `}>
             <RunHistory />
           </aside>
