@@ -43,7 +43,7 @@ export default function ManualTrigger() {
           <div className="flex min-h-full items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <form
             onSubmit={handleSubmit}
-            className="bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl border border-gray-200 dark:border-gray-700/60 p-5 md:p-6 w-full max-w-md shadow-2xl animate-slide-up"
+            className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700/60 p-5 md:p-6 w-full max-w-md shadow-2xl animate-slide-up"
           >
             <div className="flex items-center gap-3 mb-5">
               <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-600/30 flex items-center justify-center shrink-0">
