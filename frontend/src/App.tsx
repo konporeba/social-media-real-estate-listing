@@ -158,7 +158,7 @@ export default function App() {
 
           {/* Sidebar — drawer on mobile, static on desktop */}
           <aside className={`
-            fixed md:static inset-y-0 left-0 z-30 w-72 shrink-0
+            absolute md:static inset-y-0 left-0 z-30 w-72 shrink-0
             border-r border-gray-200 dark:border-gray-800/80
             overflow-y-auto
             bg-gray-50 dark:bg-gray-950
