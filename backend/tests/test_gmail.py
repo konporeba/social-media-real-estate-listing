@@ -52,7 +52,7 @@ async def test_send_alert_calls_smtp_with_starttls() -> None:
         mock_settings.return_value.gmail_app_password = "secret"
         await send_alert("Alert subject", "Alert body")
 
-    mock_smtp_cls.assert_called_once_with("smtp.gmail.com", 587)
+    mock_smtp_cls.assert_called_once_with("smtp.gmail.com", 587, timeout=10)
     mock_smtp_instance.ehlo.assert_called_once()
     mock_smtp_instance.starttls.assert_called_once()
     mock_smtp_instance.login.assert_called_once_with("agent@gmail.com", "secret")

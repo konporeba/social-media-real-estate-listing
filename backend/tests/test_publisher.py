@@ -98,12 +98,20 @@ async def test_post_to_platform_shadow_mode() -> None:
 
 @pytest.mark.asyncio
 async def test_post_to_platform_live_calls_facebook_api() -> None:
-    """Live mode routes to live_post_facebook and calls the Graph API."""
+    """Live mode routes to live_post_facebook and calls the Graph API.
+
+    The live flow first GETs /{page_id} to exchange the system-user token for a
+    Page Access Token, then POSTs the photo. Both calls must be mocked.
+    """
     from tools.social import post_to_platform
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"post_id": "pg123_post_456"}
+    page_token_response = MagicMock()
+    page_token_response.status_code = 200
+    page_token_response.json.return_value = {"access_token": "page_tok_xyz"}
+
+    post_response = MagicMock()
+    post_response.status_code = 200
+    post_response.json.return_value = {"post_id": "pg123_post_456"}
 
     with patch("config.get_settings") as mock_settings, \
          patch("httpx.AsyncClient") as mock_client_cls:
@@ -114,7 +122,8 @@ async def test_post_to_platform_live_calls_facebook_api() -> None:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(return_value=page_token_response)
+        mock_client.post = AsyncMock(return_value=post_response)
         mock_client_cls.return_value = mock_client
 
         post_id = await post_to_platform(
@@ -126,9 +135,12 @@ async def test_post_to_platform_live_calls_facebook_api() -> None:
         )
 
     assert post_id == "pg123_post_456"
+    # Page token exchange GET hits the page node
+    mock_client.get.assert_called_once()
+    assert "pg123" in mock_client.get.call_args[0][0]
+    # Photo upload POST hits /{page_id}/photos
     mock_client.post.assert_called_once()
-    call_kwargs = mock_client.post.call_args
-    assert "facebook" in call_kwargs[0][0]  # URL contains "facebook"
+    assert "pg123" in mock_client.post.call_args[0][0]
 
 
 # ── Tests for _check_token_expiry ─────────────────────────────────────────────

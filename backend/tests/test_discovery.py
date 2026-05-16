@@ -12,14 +12,14 @@ BASE = "https://dprealestate.es"
 LISTING_HTML = """<!DOCTYPE html>
 <html>
 <body>
-  <a href="/dom-sprzedaz/willa-murcia-ODS">Villa Murcia</a>
-  <a href="/mieszkanie/apartament-murcia-OMS">Apt Murcia</a>
-  <a href="/dom-sprzedaz/costa-calida-villa-ODS">Costa Calida (excluded)</a>
-  <a href="/dom-sprzedaz/costa-blanca-house-ODS">Costa Blanca (excluded)</a>
-  <a href="/mieszkanie/wynajem-murcia-OWM">Rental Apt</a>
+  <a href="/dom-sprzedaz-willa-murcia-ODS">Villa Murcia</a>
+  <a href="/mieszkanie-sprzedaz-apartament-murcia-OMS">Apt Murcia</a>
+  <a href="/dom-sprzedaz-costa-calida-villa-ODS">Costa Calida (excluded)</a>
+  <a href="/dom-sprzedaz-costa-blanca-house-ODS">Costa Blanca (excluded)</a>
+  <a href="/mieszkanie-wynajem-murcia-OWM">Rental Apt (not a sale, excluded)</a>
   <a href="/about">Not a listing</a>
-  <a href="/dom-sprzedaz/willa-murcia-ODS">Duplicate link</a>
-  <a href="https://external.com/dom-sprzedaz/ignore">External domain</a>
+  <a href="/dom-sprzedaz-willa-murcia-ODS">Duplicate link</a>
+  <a href="https://external.com/dom-sprzedaz-ignore">External domain</a>
 </body>
 </html>"""
 
@@ -29,17 +29,18 @@ LISTING_HTML = """<!DOCTYPE html>
 
 def test_extracts_dom_sprzedaz_links():
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert f"{BASE}/dom-sprzedaz/willa-murcia-ODS" in links
+    assert f"{BASE}/dom-sprzedaz-willa-murcia-ODS" in links
 
 
-def test_extracts_mieszkanie_links():
+def test_extracts_mieszkanie_sprzedaz_links():
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert f"{BASE}/mieszkanie/apartament-murcia-OMS" in links
+    assert f"{BASE}/mieszkanie-sprzedaz-apartament-murcia-OMS" in links
 
 
-def test_extracts_wynajem_links():
+def test_excludes_rentals():
+    """Regex matches only sales (-sprzedaz-); rental URLs (-wynajem-) must be rejected."""
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert f"{BASE}/mieszkanie/wynajem-murcia-OWM" in links
+    assert not any("wynajem" in l for l in links)
 
 
 def test_excludes_costa_calida():
@@ -64,7 +65,7 @@ def test_excludes_external_domains():
 
 def test_deduplicates_links():
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert links.count(f"{BASE}/dom-sprzedaz/willa-murcia-ODS") == 1
+    assert links.count(f"{BASE}/dom-sprzedaz-willa-murcia-ODS") == 1
 
 
 def test_empty_page_returns_empty_list():
@@ -72,7 +73,7 @@ def test_empty_page_returns_empty_list():
 
 
 def test_no_false_positives_on_partial_match():
-    html = '<a href="/nieruchomosci/">Back</a><a href="/dom-sprzedaz/test-ODS">House</a>'
+    html = '<a href="/nieruchomosci/">Back</a><a href="/dom-sprzedaz-test-ODS">House</a>'
     links = _extract_property_links(html, BASE)
     assert not any("nieruchomosci" in l and "sprzedaz" not in l for l in links)
 

@@ -25,6 +25,10 @@ def run_id(client: Client) -> str:
     r = client.table("runs").insert({"triggered_by": "manual"}).execute()
     rid = r.data[0]["id"]
     yield rid
+    # Only run_events cascades from runs; clean child rows from non-cascading
+    # FKs first so the parent delete doesn't violate the constraint.
+    for table in ("draft_posts", "posted_links", "publish_attempts"):
+        client.table(table).delete().eq("run_id", rid).execute()
     client.table("runs").delete().eq("id", rid).execute()
 
 

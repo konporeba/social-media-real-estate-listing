@@ -3,9 +3,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import PostEditor from '../PostEditor';
-import type { RunDetail } from '../../types';
+import type { RunDetail, DraftPost, PlatformType } from '../../types';
+import { useAppStore } from '../../store';
 
-const makeDraft = (platform: string, content: string) => ({
+const makeDraft = (platform: PlatformType, content: string): DraftPost => ({
   id: `draft-${platform}`,
   run_id: 'run-1',
   platform,
@@ -23,6 +24,7 @@ const mockRun: RunDetail = {
   status: 'awaiting_review',
   triggered_by: 'manual',
   property_url: 'https://dprealestate.es/test-OMS',
+  property_title: null,
   error_message: null,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
@@ -47,14 +49,28 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Zustand store is a module-level singleton; reset per-run state so tests
+  // don't leak platform selections / edit buffers into each other.
+  useAppStore.setState({
+    selectedRunId: null,
+    editBuffers: {},
+    platformSelections: {},
+    toasts: [],
+  });
 });
+
+// The platform label appears in both the tab button AND the active-tab header in
+// the edit panel, so plain getByText('Facebook') is ambiguous. The tab itself is
+// the only *button* element with that accessible name — use it for navigation.
+const tab = (name: 'Facebook' | 'Instagram' | 'LinkedIn') =>
+  screen.getByRole('button', { name });
 
 describe('PostEditor', () => {
   it('renders three platform tabs', () => {
     render(<PostEditor run={mockRun} />, { wrapper });
-    expect(screen.getByText('Facebook')).toBeInTheDocument();
-    expect(screen.getByText('Instagram')).toBeInTheDocument();
-    expect(screen.getByText('LinkedIn')).toBeInTheDocument();
+    expect(tab('Facebook')).toBeInTheDocument();
+    expect(tab('Instagram')).toBeInTheDocument();
+    expect(tab('LinkedIn')).toBeInTheDocument();
   });
 
   it('defaults to Facebook tab and shows its character count', () => {
@@ -64,13 +80,13 @@ describe('PostEditor', () => {
 
   it('switches to Instagram tab and shows correct character count', () => {
     render(<PostEditor run={mockRun} />, { wrapper });
-    fireEvent.click(screen.getByText('Instagram'));
+    fireEvent.click(tab('Instagram'));
     expect(screen.getByText(/250\s*\/\s*200–2200/)).toBeInTheDocument();
   });
 
   it('switches to LinkedIn tab and shows correct character count', () => {
     render(<PostEditor run={mockRun} />, { wrapper });
-    fireEvent.click(screen.getByText('LinkedIn'));
+    fireEvent.click(tab('LinkedIn'));
     expect(screen.getByText(/450\s*\/\s*400–3000/)).toBeInTheDocument();
   });
 
@@ -117,14 +133,20 @@ describe('PostEditor', () => {
   });
 
   it('disables approve button when no platforms are selected', () => {
+    // Only the active tab's include/skip checkbox is rendered at any time, so
+    // to deselect all three we have to switch tabs and toggle each in turn.
     render(<PostEditor run={mockRun} />, { wrapper });
-    const fbCheckbox = screen.getAllByRole('checkbox')[0];
-    const igCheckbox = screen.getAllByRole('checkbox')[1];
-    const liCheckbox = screen.getAllByRole('checkbox')[2];
-    fireEvent.click(fbCheckbox);
-    fireEvent.click(igCheckbox);
-    fireEvent.click(liCheckbox);
-    const approveBtn = screen.getByText(/Approve/);
+
+    // Facebook is the default active tab.
+    fireEvent.click(screen.getByRole('checkbox'));
+
+    fireEvent.click(tab('Instagram'));
+    fireEvent.click(screen.getByRole('checkbox'));
+
+    fireEvent.click(tab('LinkedIn'));
+    fireEvent.click(screen.getByRole('checkbox'));
+
+    const approveBtn = screen.getByRole('button', { name: /Approve/ });
     expect(approveBtn).toBeDisabled();
   });
 });
