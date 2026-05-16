@@ -18,12 +18,17 @@ export function useRuns() {
   });
 }
 
+const TERMINAL_STATUSES = new Set(['completed', 'partial', 'rejected', 'failed']);
+
 export function useRun(id: string | null) {
   return useQuery<RunDetail>({
     queryKey: ['runs', id],
     queryFn: () => api.getRun(id!),
     enabled: id !== null,
-    refetchInterval: 5_000,
+    // Terminal runs never change — no polling needed.
+    // Active runs are updated via SSE (useRunStream), with 5s polling as fallback.
+    refetchInterval: (query) =>
+      query.state.data && TERMINAL_STATUSES.has(query.state.data.status) ? false : 5_000,
   });
 }
 

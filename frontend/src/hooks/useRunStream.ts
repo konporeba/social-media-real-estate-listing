@@ -12,6 +12,8 @@ export function useRunStream(
     const url = runId ? `/events?run_id=${runId}` : '/events';
     let es: EventSource;
     let closed = false;
+    let reconnectDelay = 3_000;
+    const MAX_RECONNECT_DELAY = 30_000;
 
     function connect() {
       if (closed) return;
@@ -20,13 +22,17 @@ export function useRunStream(
         if (!e.data || e.data.startsWith(':')) return;
         try {
           onEventRef.current(JSON.parse(e.data) as SSEEvent);
+          reconnectDelay = 3_000; // reset backoff on successful message
         } catch {
-          // ignore malformed frames
+          console.warn('[useRunStream] Failed to parse SSE frame:', e.data);
         }
       };
       es.onerror = () => {
         es.close();
-        if (!closed) setTimeout(connect, 3000);
+        if (!closed) {
+          setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+        }
       };
     }
 

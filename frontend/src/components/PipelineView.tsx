@@ -4,9 +4,9 @@ import type { RunDetail, RunStatus } from '../types';
 const STAGES: { keys: RunStatus[]; label: string; filterKey: string }[] = [
   { keys: ['discovering'],                              label: 'Discover',  filterKey: 'discover' },
   { keys: ['generating', 'validating', 'regenerating'], label: 'Generate',  filterKey: 'generate' },
-  { keys: ['awaiting_review'],                          label: 'Review',    filterKey: 'review'   },
+  { keys: ['awaiting_review', 'rejected'],              label: 'Review',    filterKey: 'review'   },
   { keys: ['publishing'],                               label: 'Publish',   filterKey: 'publish'  },
-  { keys: ['completed', 'partial'],                     label: 'Done',      filterKey: 'done'     },
+  { keys: ['completed', 'partial', 'failed'],           label: 'Done',      filterKey: 'done'     },
 ];
 
 function stageIndex(status: RunStatus): number {
@@ -25,7 +25,7 @@ const STATUS_BADGE: Partial<Record<RunStatus, string>> = {
 
 function CheckIcon() {
   return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
     </svg>
   );
@@ -33,7 +33,7 @@ function CheckIcon() {
 
 function XIcon() {
   return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
     </svg>
   );
@@ -83,17 +83,17 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
         <p className="text-xs text-gray-400 dark:text-gray-600 mb-4">Click a stage to filter the activity log</p>
       )}
 
-      {/* Horizontally scrollable on mobile; py/my pair gives the ring-offset room to render */}
-      <div className="overflow-x-auto -mx-4 px-4 py-2 -my-2 md:mx-0 md:px-0">
-      <div className="flex items-center min-w-[340px]">
+      {/* py/my pair gives the ring-offset room to render */}
+      <div className="py-2 -my-2">
+      <div className="flex items-center">
         {STAGES.map((stage, i) => {
           const isActive      = i === activeIdx && !isTerminal;
           const isDone        = i < activeIdx || (isTerminal && !isFailed);
           const isStageFailed = isFailed && i === activeIdx;
           const isFiltered    = activeFilter === stage.filterKey;
 
-          // Stages that have been reached (done or active or failed at this point) are clickable
-          const isReachable = isDone || isActive || isStageFailed;
+          // Stage clicks only work on terminal runs to filter the activity log
+          const isReachable = isTerminal && (isDone || isStageFailed);
 
           return (
             <React.Fragment key={i}>
@@ -103,7 +103,7 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
                   disabled={!isReachable}
                   title={isReachable ? `Filter by ${stage.label} stage` : `${stage.label} not reached yet`}
                   className={[
-                    'w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300',
+                    'w-7 h-7 md:w-9 md:h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300',
                     isReachable ? 'cursor-pointer' : 'cursor-default',
                     isFiltered ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-gray-900 ring-blue-400 scale-110' : '',
                     isActive      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 animate-pulse-ring' : '',
@@ -117,7 +117,7 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
                   {isDone ? <CheckIcon /> : isStageFailed ? <XIcon /> : <span className="text-xs">{i + 1}</span>}
                 </button>
 
-                <span className={`text-[11px] font-medium text-center transition-colors ${
+                <span className={`text-[10px] md:text-[11px] font-medium text-center transition-colors ${
                   isFiltered    ? 'text-blue-400' :
                   isActive      ? 'text-blue-400' :
                   isDone        ? 'text-green-500 dark:text-green-400/60' :
@@ -145,17 +145,20 @@ export default function PipelineView({ run, activeFilter, onStageClick }: Props)
       </div>
 
       {run.property_url && (
-        <div className="mt-5 flex items-center gap-2 text-xs">
-          <svg className="w-3.5 h-3.5 text-gray-400 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-          </svg>
+        <div className="mt-4">
           <a
             href={run.property_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-400/70 hover:text-blue-300 break-all hover:underline transition-colors"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/25 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:border-blue-300 dark:hover:border-blue-500/40 transition-colors"
           >
-            {run.property_url}
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            View property
+            <svg className="w-3 h-3 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+            </svg>
           </a>
         </div>
       )}

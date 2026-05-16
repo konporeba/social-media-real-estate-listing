@@ -215,7 +215,7 @@ function PlatformTabs({
           <button
             key={p}
             onClick={() => onSelect(p)}
-            className={`flex items-center gap-1.5 px-2 md:px-4 py-3 text-sm border-b-2 -mb-px transition-colors ${
+            className={`flex-1 md:flex-none flex items-center justify-center md:justify-start gap-1.5 px-2 md:px-4 py-3 text-sm border-b-2 -mb-px transition-colors ${
               isActive
                 ? `border-current ${style.text}`
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -238,7 +238,6 @@ function PlatformTabs({
 export default function PostEditor({ run }: { run: RunDetail }) {
   const [activeTab, setActiveTab]           = useState<PlatformType>('facebook');
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
-  const [mobilePanel, setMobilePanel]       = useState<'preview' | 'edit'>('edit');
 
   const editBuffers          = useAppStore((s) => s.editBuffers[run.id]);
   const setEditBuffer        = useAppStore((s) => s.setEditBuffer);
@@ -275,7 +274,7 @@ export default function PostEditor({ run }: { run: RunDetail }) {
     el.style.height = 'auto';
     const h = el.scrollHeight;
     if (h > 0) el.style.height = `${h}px`;
-  }, [content, activeTab, mobilePanel]);
+  }, [content, activeTab]);
 
   const handleApprove = async () => {
     const posts = {
@@ -308,7 +307,6 @@ export default function PostEditor({ run }: { run: RunDetail }) {
       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
         <div>
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Review Posts</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Preview and edit each platform before publishing</p>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 shrink-0">
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
@@ -323,35 +321,11 @@ export default function PostEditor({ run }: { run: RunDetail }) {
         dotColor={(p) => isPlatformSelected(p) ? 'bg-blue-400' : 'bg-gray-700'}
       />
 
-      {/* Mobile panel toggle — hidden on desktop */}
-      <div className="flex md:hidden shrink-0 border-b border-gray-200 dark:border-gray-800/60">
-        <button
-          onClick={() => setMobilePanel('edit')}
-          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
-            mobilePanel === 'edit'
-              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
-              : 'text-gray-500 dark:text-gray-400'
-          }`}
-        >
-          Edit
-        </button>
-        <button
-          onClick={() => setMobilePanel('preview')}
-          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
-            mobilePanel === 'preview'
-              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
-              : 'text-gray-500 dark:text-gray-400'
-          }`}
-        >
-          Preview
-        </button>
-      </div>
-
       {/* Split view */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
-        {/* Left — post preview */}
-        <div className={`${mobilePanel === 'preview' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 border-r border-gray-200 dark:border-gray-800/60 overflow-y-auto p-4 md:p-5`}>
+        {/* Left — post preview (desktop only) */}
+        <div className="hidden md:flex md:flex-col md:w-1/2 md:min-h-0 border-r border-gray-200 dark:border-gray-800/60 overflow-y-auto p-5">
           <div className={`max-w-[480px] mx-auto rounded-xl border ${style.border} overflow-hidden bg-white dark:bg-gray-950/60 shadow-lg shrink-0`}>
             <div className="px-4 py-3 flex items-center gap-2 border-b border-yellow-500/10">
               <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
@@ -364,8 +338,8 @@ export default function PostEditor({ run }: { run: RunDetail }) {
         </div>
 
         {/* Right — edit panel */}
-        <div className={`${mobilePanel === 'edit' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 overflow-y-auto p-4 md:p-5`}>
-          <div className="max-w-[480px] mx-auto flex flex-col gap-4">
+        <div className="flex flex-col flex-1 min-h-0 md:w-1/2 overflow-y-auto p-4 md:p-5">
+          <div className="max-w-[480px] mx-auto w-full flex flex-col gap-4">
 
           {/* Include / skip toggle */}
           <div className="flex items-center justify-between">
@@ -485,7 +459,7 @@ export default function PostEditor({ run }: { run: RunDetail }) {
                 <button
                   onClick={handleReject}
                   disabled={rejectMutation.isPending}
-                  className="px-4 py-2 text-sm bg-red-700 hover:bg-red-600 rounded-xl disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 text-sm text-white bg-red-700 hover:bg-red-600 rounded-xl disabled:opacity-50 transition-colors"
                 >
                   {rejectMutation.isPending ? 'Rejecting…' : 'Confirm reject'}
                 </button>
@@ -501,8 +475,7 @@ export default function PostEditor({ run }: { run: RunDetail }) {
 // ─── Read-only review (shown when "Review" stage filter active on a completed run) ──
 
 export function DraftReview({ run, onClear }: { run: RunDetail; onClear: () => void }) {
-  const [activeTab, setActiveTab]   = useState<PlatformType>('facebook');
-  const [mobilePanel, setMobilePanel] = useState<'preview' | 'content'>('content');
+  const [activeTab, setActiveTab] = useState<PlatformType>('facebook');
 
   const draft   = getDraft(run, activeTab);
   const content = draft?.final_content ?? '';
@@ -522,44 +495,20 @@ export function DraftReview({ run, onClear }: { run: RunDetail; onClear: () => v
         </div>
         <button
           onClick={onClear}
-          className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors underline shrink-0"
+          className="text-xs text-blue-500 dark:text-blue-400/70 hover:text-blue-600 dark:hover:text-blue-300 underline transition-colors shrink-0"
         >
-          Show activity log
+          Show all events
         </button>
       </div>
 
       {/* Tab bar */}
       <PlatformTabs active={activeTab} onSelect={setActiveTab} />
 
-      {/* Mobile panel toggle */}
-      <div className="flex md:hidden shrink-0 border-b border-gray-200 dark:border-gray-800/60">
-        <button
-          onClick={() => setMobilePanel('content')}
-          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
-            mobilePanel === 'content'
-              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
-              : 'text-gray-500 dark:text-gray-400'
-          }`}
-        >
-          Content
-        </button>
-        <button
-          onClick={() => setMobilePanel('preview')}
-          className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
-            mobilePanel === 'preview'
-              ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-b-2 border-blue-500'
-              : 'text-gray-500 dark:text-gray-400'
-          }`}
-        >
-          Preview
-        </button>
-      </div>
-
       {/* Split view */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
-        {/* Left — post preview */}
-        <div className={`${mobilePanel === 'preview' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 border-r border-gray-200 dark:border-gray-800/60 overflow-y-auto p-4 md:p-5`}>
+        {/* Left — post preview (desktop only) */}
+        <div className="hidden md:flex md:flex-col md:w-1/2 md:min-h-0 border-r border-gray-200 dark:border-gray-800/60 overflow-y-auto p-5">
           {draft ? (
             <div className={`max-w-[480px] mx-auto rounded-xl border ${style.border} overflow-hidden bg-white dark:bg-gray-950/60 shadow-lg shrink-0`}>
               {activeTab === 'linkedin'  && <LinkedInPreview  content={content} imageUrl={draft.image_url} />}
@@ -572,7 +521,7 @@ export function DraftReview({ run, onClear }: { run: RunDetail; onClear: () => v
         </div>
 
         {/* Right — read-only content */}
-        <div className={`${mobilePanel === 'content' ? 'block' : 'hidden'} md:flex md:flex-col w-full md:w-1/2 md:min-h-0 overflow-y-auto p-4 md:p-5`}>
+        <div className="flex flex-col flex-1 min-h-0 md:w-1/2 overflow-y-auto p-4 md:p-5">
           <div className="max-w-[480px] mx-auto w-full">
           {draft ? (
             <div className="flex flex-col gap-3">

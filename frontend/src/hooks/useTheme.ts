@@ -12,11 +12,5 @@ export function useTheme() {
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
   }, [isDark]);
 
-  // Apply on first render synchronously
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDark);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return { isDark, toggle: () => setIsDark((d) => !d) };
 }

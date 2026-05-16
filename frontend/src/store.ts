@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { PlatformType } from './types';
 
+let _toastCounter = 0;
+
 interface Toast {
   id: string;
   message: string;
@@ -24,7 +26,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   selectedRunId: null,
-  setSelectedRunId: (id) => set({ selectedRunId: id, editBuffers: {} }),
+  setSelectedRunId: (id) => set({ selectedRunId: id }),
 
   editBuffers: {},
   setEditBuffer: (runId, platform, content) =>
@@ -50,7 +52,7 @@ export const useAppStore = create<AppState>((set) => ({
   toasts: [],
   addToast: (message, type) =>
     set((s) => ({
-      toasts: [...s.toasts, { id: `${Date.now()}-${Math.random()}`, message, type }],
+      toasts: [...s.toasts, { id: `toast-${++_toastCounter}`, message, type }],
     })),
   removeToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

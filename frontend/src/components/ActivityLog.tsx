@@ -211,7 +211,7 @@ function EventRow({ event, isLast }: { event: RunEvent; isLast: boolean }) {
             {cfg.label} Agent
           </span>
           <span className="text-[10px] text-gray-400 dark:text-gray-500 font-mono tabular-nums shrink-0">
-            {new Date(event.created_at).toLocaleTimeString('pl-PL', { hour12: false })}
+            {new Date(event.created_at).toLocaleTimeString(undefined, { hour12: false })}
           </span>
         </div>
         {/* Event label gets its own full-width row — never competes for space */}
@@ -255,19 +255,9 @@ export default function ActivityLog({ events, stageFilter, onClearFilter }: Acti
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          {stageFilter && (
-            <button
-              onClick={onClearFilter}
-              className="text-[10px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors underline"
-            >
-              Clear filter
-            </button>
-          )}
-          <span className="text-[10px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full font-mono">
-            {visible.length}{stageFilter && events.length !== visible.length ? `/${events.length}` : ''} events
-          </span>
-        </div>
+        <span className="text-[10px] text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full font-mono shrink-0">
+          {visible.length}{stageFilter && events.length !== visible.length ? `/${events.length}` : ''} events
+        </span>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-5 py-4">
