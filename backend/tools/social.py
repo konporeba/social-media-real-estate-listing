@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -209,6 +210,17 @@ async def live_post_instagram(
         return r2.json()["id"]
 
 
+def _assert_supabase_host(image_url: str, supabase_url: str) -> None:
+    """Pin image downloads to the configured Supabase host (defence-in-depth SSRF guard)."""
+    allowed = (urlparse(supabase_url).hostname or "").lower()
+    actual = (urlparse(image_url).hostname or "").lower()
+    if not allowed or actual != allowed:
+        raise RuntimeError(
+            f"Refusing to download image from disallowed host {actual!r} "
+            f"(expected {allowed!r})"
+        )
+
+
 async def live_post_linkedin(
     content: str,
     image_url: str,
@@ -268,7 +280,8 @@ async def live_post_linkedin(
         asset_urn: str = upload_value["asset"]
 
         # Step 2: download image from Supabase Storage, upload bytes to LinkedIn
-        img = await client.get(image_url, follow_redirects=True, timeout=30.0)
+        _assert_supabase_host(image_url, s.supabase_url)
+        img = await client.get(image_url, follow_redirects=False, timeout=30.0)
         if img.status_code != 200:
             raise RuntimeError(
                 f"Failed to download image for LinkedIn: HTTP {img.status_code}"

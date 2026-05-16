@@ -100,9 +100,13 @@ async def _handle_trigger(row: dict, orchestrator: "Orchestrator") -> None:
 
     for attempt in range(_MAX_RETRIES):
         try:
-            run_id = await orchestrator.start(
-                triggered_by=row["source"],
-                property_url=row.get("property_url"),
+            # 30 s is generous: start() only does budget check + DB insert + fire-and-forget.
+            run_id = await asyncio.wait_for(
+                orchestrator.start(
+                    triggered_by=row["source"],
+                    property_url=row.get("property_url"),
+                ),
+                timeout=30.0,
             )
             await asyncio.to_thread(_update_trigger, trigger_id, run_id, "consumed")
             log.info("trigger_consumed", trigger_id=trigger_id, run_id=run_id)

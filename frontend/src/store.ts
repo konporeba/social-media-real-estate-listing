@@ -52,7 +52,8 @@ export const useAppStore = create<AppState>((set) => ({
   toasts: [],
   addToast: (message, type) =>
     set((s) => ({
-      toasts: [...s.toasts, { id: `toast-${++_toastCounter}`, message, type }],
+      // Cap at 50 so runaway failures can't accumulate unbounded toasts in memory.
+      toasts: [...s.toasts.slice(-49), { id: `toast-${++_toastCounter}`, message, type }],
     })),
   removeToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

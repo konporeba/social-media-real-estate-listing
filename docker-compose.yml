@@ -20,6 +20,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s                 # allow time for browser-worker dependency + startup
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     restart: unless-stopped
 
   browser-worker:
@@ -40,4 +45,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     restart: unless-stopped

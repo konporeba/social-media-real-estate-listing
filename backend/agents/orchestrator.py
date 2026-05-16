@@ -438,6 +438,8 @@ class Orchestrator:
         finally:
             self._review_events.pop(run_id, None)
             self._review_locks.pop(run_id, None)
+            self._review_outcomes.pop(run_id, None)
+            self._traces.pop(run_id, None)
 
     async def _recover_approved(self, run_id: str, approved_posts: dict) -> None:
         """Re-enter the pipeline after a server restart: store approval and publish."""

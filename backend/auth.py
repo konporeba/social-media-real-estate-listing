@@ -24,11 +24,18 @@ _JWKS_TTL = 300.0  # seconds
 def _get_jwks() -> PyJWKClient:
     global _jwks_client, _jwks_fetched_at
     now = time.monotonic()
-    if _jwks_client is None or now - _jwks_fetched_at > _JWKS_TTL:
+    if _jwks_client is not None and (now - _jwks_fetched_at) <= _JWKS_TTL:
+        return _jwks_client
+    try:
         team = get_settings().cloudflare_access_team_domain
         url = f"https://{team}/cdn-cgi/access/certs"
         _jwks_client = PyJWKClient(url, cache_keys=True)
         _jwks_fetched_at = now
+    except Exception as exc:
+        # If we have a previously-good client, keep using it through a transient outage.
+        if _jwks_client is None:
+            raise
+        log.warning("jwks_refresh_failed_using_stale", error=str(exc))
     return _jwks_client
 
 

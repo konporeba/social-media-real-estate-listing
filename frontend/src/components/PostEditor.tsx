@@ -282,6 +282,20 @@ export default function PostEditor({ run }: { run: RunDetail }) {
       instagram: isPlatformSelected('instagram') ? (buffers['instagram'] ?? getDraft(run, 'instagram')?.final_content ?? '') : '',
       linkedin:  isPlatformSelected('linkedin')  ? (buffers['linkedin']  ?? getDraft(run, 'linkedin')?.final_content  ?? '') : '',
     };
+
+    for (const platform of selectedPlatforms) {
+      const text = posts[platform];
+      const [min, max] = CHAR_LIMITS[platform];
+      if (text.length < min || text.length > max) {
+        addToast(
+          `${PLATFORM_LABELS[platform]} post is ${text.length} chars — must be ${min}–${max}`,
+          'error',
+        );
+        setActiveTab(platform);
+        return;
+      }
+    }
+
     try {
       await approveMutation.mutateAsync({ id: run.id, posts });
       addToast(`Approved ${selectedPlatforms.length} platform(s) — publishing started.`, 'success');
