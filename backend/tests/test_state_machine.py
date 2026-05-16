@@ -4,9 +4,7 @@ These tests cover validate_transition() only — no DB, no network, no async.
 """
 
 import pytest
-
 from agents.orchestrator import VALID_TRANSITIONS, validate_transition
-
 
 # ── Happy-path transitions ────────────────────────────────────────────────────
 

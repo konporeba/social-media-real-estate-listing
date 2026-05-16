@@ -1,4 +1,5 @@
 """Anthropic client: structured post generation with tool-use and prompt caching."""
+
 from __future__ import annotations
 
 import time
@@ -15,9 +16,9 @@ GENERATE_POSTS_TOOL: dict = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "facebook":  {"type": "string", "minLength": 300, "maxLength": 1200},
+            "facebook": {"type": "string", "minLength": 300, "maxLength": 1200},
             "instagram": {"type": "string", "minLength": 200, "maxLength": 2200},
-            "linkedin":  {"type": "string", "minLength": 400, "maxLength": 3000},
+            "linkedin": {"type": "string", "minLength": 400, "maxLength": 3000},
         },
         "required": ["facebook", "instagram", "linkedin"],
     },
@@ -80,18 +81,21 @@ def generate_posts(
     )
     if not tool_block:
         if lf_generation:
-            lf_generation.update(level="ERROR", status_message=f"No tool_use block; stop_reason={response.stop_reason}")
+            lf_generation.update(
+                level="ERROR",
+                status_message=f"No tool_use block; stop_reason={response.stop_reason}",
+            )
             lf_generation.end()
-        raise ValueError(
-            f"Claude returned no tool_use block; stop_reason={response.stop_reason}"
-        )
+        raise ValueError(f"Claude returned no tool_use block; stop_reason={response.stop_reason}")
 
     drafts: dict[str, str] = tool_block.input
     required_platforms = {"facebook", "instagram", "linkedin"}
     missing = required_platforms - set(drafts.keys())
     if missing:
         if lf_generation:
-            lf_generation.update(level="ERROR", status_message=f"Tool response missing platforms: {missing}")
+            lf_generation.update(
+                level="ERROR", status_message=f"Tool response missing platforms: {missing}"
+            )
             lf_generation.end()
         raise ValueError(f"Claude tool response missing required platforms: {missing}")
 

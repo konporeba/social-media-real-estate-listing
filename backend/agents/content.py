@@ -1,4 +1,5 @@
 """Content Agent — browser extraction, image pipeline, Claude post generation."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,9 +7,9 @@ import time
 from typing import Any
 
 import structlog
+from models import PropertyData
 
 from agents.base import BaseAgent
-from models import PropertyData
 
 log = structlog.get_logger()
 
@@ -84,7 +85,8 @@ class ContentAgent(BaseAgent):
                 as_type="span",
                 input={"url": property_url, "is_regen": is_regen, "attempt": attempt},
             )
-            if self.lf_trace else None
+            if self.lf_trace
+            else None
         )
 
         await self.emit(
@@ -98,16 +100,21 @@ class ContentAgent(BaseAgent):
         if is_regen:
             data = existing_data
         else:
-            await self.emit(self.run_id, "content", "extraction_started",
-                            {"url": property_url})
+            await self.emit(self.run_id, "content", "extraction_started", {"url": property_url})
             from tools.browser_client import extract_property
+
             data = await extract_property(property_url)
             bound.info("extraction_done", title=data.title, price=data.price)
-            await self.emit(self.run_id, "content", "extraction_done", {
-                "title": data.title,
-                "price": data.price,
-                "area": data.area,
-            })
+            await self.emit(
+                self.run_id,
+                "content",
+                "extraction_done",
+                {
+                    "title": data.title,
+                    "price": data.price,
+                    "area": data.area,
+                },
+            )
 
             if data.image_bytes:
                 await self.emit(self.run_id, "content", "image_optimizing", {})
@@ -120,7 +127,9 @@ class ContentAgent(BaseAgent):
                 except Exception as exc:
                     bound.warning("image_pipeline_failed_continuing", error=str(exc))
                     await self.emit(
-                        self.run_id, "content", "image_skipped",
+                        self.run_id,
+                        "content",
+                        "image_skipped",
                         {"reason": "Image processing failed — continuing without image"},
                     )
                     image_url = None
@@ -128,20 +137,20 @@ class ContentAgent(BaseAgent):
                 bound.warning("no_image_bytes", url=property_url)
 
         # ── 4. Load prompt ─────────────────────────────────────────────────────
-        system_prompt, prompt_version = await asyncio.to_thread(
-            self._load_prompt, "content"
-        )
+        system_prompt, prompt_version = await asyncio.to_thread(self._load_prompt, "content")
         bound.info("prompt_loaded", version=prompt_version)
 
         # ── 5. Claude Sonnet tool-use ──────────────────────────────────────────
-        await self.emit(self.run_id, "content", "generation_started",
-                        {"prompt_version": prompt_version, "is_regen": is_regen})
+        await self.emit(
+            self.run_id,
+            "content",
+            "generation_started",
+            {"prompt_version": prompt_version, "is_regen": is_regen},
+        )
         user_prompt = _build_user_prompt(data, validation_feedback)
         t0 = time.monotonic()
         # lf_span is passed so llm.py can open a child Langfuse generation around the API call
-        drafts, usage = await asyncio.to_thread(
-            self._generate, system_prompt, user_prompt, lf_span
-        )
+        drafts, usage = await asyncio.to_thread(self._generate, system_prompt, user_prompt, lf_span)
         usage["prompt_version"] = prompt_version
         usage["latency_ms"] = int((time.monotonic() - t0) * 1000)
         usage["is_regen"] = is_regen
@@ -151,19 +160,20 @@ class ContentAgent(BaseAgent):
 
         # ── 6. Persist draft_posts (delete-then-insert for idempotency) ────────
         await asyncio.to_thread(self._save_drafts, drafts, image_url, prompt_version)
-        await self.emit(self.run_id, "content", "drafts_saved",
-                        {"platforms": list(drafts.keys())})
+        await self.emit(self.run_id, "content", "drafts_saved", {"platforms": list(drafts.keys())})
 
         if lf_span:
-            lf_span.update(output={
-                "image_url": image_url,
-                "prompt_version": prompt_version,
-                "draft_lengths": {p: len(c) for p, c in drafts.items()},
-                "input_tokens": usage.get("input_tokens"),
-                "output_tokens": usage.get("output_tokens"),
-                "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
-                "latency_ms": usage.get("latency_ms"),
-            })
+            lf_span.update(
+                output={
+                    "image_url": image_url,
+                    "prompt_version": prompt_version,
+                    "draft_lengths": {p: len(c) for p, c in drafts.items()},
+                    "input_tokens": usage.get("input_tokens"),
+                    "output_tokens": usage.get("output_tokens"),
+                    "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
+                    "latency_ms": usage.get("latency_ms"),
+                }
+            )
             lf_span.end()
 
         return {"image_url": image_url, "drafts": drafts, "property_data": data}
@@ -172,14 +182,17 @@ class ContentAgent(BaseAgent):
 
     def _optimize_image(self, raw: bytes) -> bytes:
         from tools.image import optimize_image
+
         return optimize_image(raw)
 
     def _upload_image(self, image_bytes: bytes) -> str:
         from tools.storage import upload_image
+
         return upload_image(image_bytes, self.run_id)
 
     def _load_prompt(self, name: str) -> tuple[str, str]:
         from prompts.loader import load_active_prompt
+
         return load_active_prompt(name)
 
     def _generate(
@@ -187,6 +200,7 @@ class ContentAgent(BaseAgent):
     ) -> tuple[dict[str, str], dict]:
         from config import get_settings
         from tools.llm import generate_posts
+
         s = get_settings()
         return generate_posts(
             system_prompt=system_prompt,
@@ -203,6 +217,7 @@ class ContentAgent(BaseAgent):
         prompt_version: str,
     ) -> None:
         from db.client import get_client
+
         client = get_client()
         # Delete existing drafts first — handles regeneration without duplicates
         client.table("draft_posts").delete().eq("run_id", self.run_id).execute()

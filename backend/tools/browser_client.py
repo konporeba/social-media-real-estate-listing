@@ -9,7 +9,6 @@ import base64
 
 import httpx
 import structlog
-
 from models import PropertyData
 
 log = structlog.get_logger()

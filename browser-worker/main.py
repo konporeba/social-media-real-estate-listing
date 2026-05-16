@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
 

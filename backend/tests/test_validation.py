@@ -1,13 +1,11 @@
 """Unit tests for the Validation Layer — no DB, no network."""
+
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from agents.validation import (
     ValidationAgent,
-    ValidationResult,
     _price_in_text,
     _validate_post,
 )
@@ -54,10 +52,7 @@ def _ig(text: str) -> str:
 
 
 def _li(text: str) -> str:
-    base = (
-        f"{text} {CATEGORY}. Cena: 235 000 EUR. "
-        f"Doskonała inwestycja. {URL} #nieruchomości"
-    )
+    base = f"{text} {CATEGORY}. Cena: 235 000 EUR. Doskonała inwestycja. {URL} #nieruchomości"
     while len(base) < 400:
         base += " nieruchomość"
     return base
@@ -143,7 +138,7 @@ def test_price_present_passes():
 
 
 def test_price_missing_fails():
-    content = f"A" * 300 + f" Dom na sprzedaż {URL} #a #b #c"
+    content = "A" * 300 + f" Dom na sprzedaż {URL} #a #b #c"
     errors, _ = _validate_post(content, "facebook", _data())
     assert any("price" in e for e in errors)
 
@@ -163,7 +158,7 @@ def test_facebook_hashtags_pass():
 
 
 def test_facebook_too_few_hashtags():
-    content = f"A" * 300 + f" Dom na sprzedaż 235 000 EUR {URL} #jeden"
+    content = "A" * 300 + f" Dom na sprzedaż 235 000 EUR {URL} #jeden"
     errors, _ = _validate_post(content, "facebook", _data())
     assert any("hashtag" in e for e in errors)
 
@@ -187,8 +182,7 @@ def test_linkedin_no_hashtags_passes():
 
 
 def test_linkedin_too_many_hashtags():
-    content = (f"Dom na sprzedaż 235 000 EUR {URL} " + "x " * 50
-               + "#a #b #c #d")
+    content = f"Dom na sprzedaż 235 000 EUR {URL} " + "x " * 50 + "#a #b #c #d"
     errors, _ = _validate_post(content, "linkedin", _data())
     assert any("hashtag" in e for e in errors)
 
@@ -222,7 +216,7 @@ def test_category_present_passes():
 
 
 def test_category_missing_fails():
-    content = f"A" * 300 + f" 235 000 EUR {URL} #a #b #c"
+    content = "A" * 300 + f" 235 000 EUR {URL} #a #b #c"
     errors, _ = _validate_post(content, "facebook", _data())
     assert any("category" in e for e in errors)
 

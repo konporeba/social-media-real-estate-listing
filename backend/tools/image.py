@@ -1,4 +1,5 @@
 """Pillow image optimization: resize to max 1440px edge, JPEG q85, EXIF stripped."""
+
 from __future__ import annotations
 
 import io

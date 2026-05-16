@@ -2,15 +2,15 @@
 
 All DB calls and platform posts are mocked — no network, no Supabase.
 """
+
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from agents.publisher import PLATFORMS, PublishResult, PublisherAgent
-
+from agents.publisher import PLATFORMS, PublisherAgent, PublishResult
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,9 @@ def make_agent(run_id: str = "run-abc-123") -> tuple[PublisherAgent, list[tuple]
     return agent, emitted
 
 
-def draft_row(platform: str, content: str = "post content", image: str | None = "https://img") -> dict:
+def draft_row(
+    platform: str, content: str = "post content", image: str | None = "https://img"
+) -> dict:
     return {"platform": platform, "final_content": content, "image_url": image}
 
 
@@ -39,14 +41,18 @@ def draft_row(platform: str, content: str = "post content", image: str | None = 
 def test_check_succeeded_true() -> None:
     agent, _ = make_agent()
     mock_client = MagicMock()
-    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{"id": "x"}]
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+        {"id": "x"}
+    ]
 
     with patch("agents.publisher.get_client" if False else "db.client.get_client", mock_client):
         # Direct call on the mock
         agent._check_succeeded.__func__  # just verify it's callable
     # Inline test via direct DB mock
     with patch("db.client.get_client") as mock_get:
-        mock_get.return_value.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{"id": "x"}]
+        mock_get.return_value.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+            {"id": "x"}
+        ]
         result = agent._check_succeeded("facebook")
     assert result is True
 
@@ -113,9 +119,10 @@ async def test_post_to_platform_live_calls_facebook_api() -> None:
     post_response.status_code = 200
     post_response.json.return_value = {"post_id": "pg123_post_456"}
 
-    with patch("config.get_settings") as mock_settings, \
-         patch("httpx.AsyncClient") as mock_client_cls:
-
+    with (
+        patch("config.get_settings") as mock_settings,
+        patch("httpx.AsyncClient") as mock_client_cls,
+    ):
         mock_settings.return_value.meta_facebook_page_id = "pg123"
         mock_settings.return_value.meta_access_token = "tok"
 
@@ -155,10 +162,11 @@ def test_token_expiry_no_warning_when_blank() -> None:
 
 def test_token_expiry_logs_warning_when_within_7_days(caplog: Any) -> None:
     import logging
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
+
     from tools.social import _check_token_expiry
 
-    soon = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d")
+    soon = (datetime.now(UTC) + timedelta(days=3)).strftime("%Y-%m-%d")
     with caplog.at_level(logging.WARNING):
         _check_token_expiry(soon, "linkedin")
     # structlog doesn't use caplog in all configs, but _check_token_expiry should not raise
@@ -226,10 +234,11 @@ async def test_all_platforms_succeed_shadow() -> None:
     agent, emitted = make_agent()
     drafts = [draft_row(p) for p in PLATFORMS]
 
-    with patch("db.client.get_client") as mock_get, \
-         patch("config.get_settings") as mock_settings, \
-         patch("tools.social.shadow_post", new_callable=AsyncMock) as mock_shadow:
-
+    with (
+        patch("db.client.get_client") as mock_get,
+        patch("config.get_settings") as mock_settings,
+        patch("tools.social.shadow_post", new_callable=AsyncMock) as mock_shadow,
+    ):
         mock_settings.return_value.publish_mode = "shadow"
         mock_shadow.side_effect = lambda platform, run_id: f"shadow_{platform}_{run_id[:8]}"
 
@@ -267,10 +276,11 @@ async def test_platform_already_succeeded_is_skipped() -> None:
     agent, emitted = make_agent()
     drafts = [draft_row(p) for p in PLATFORMS]
 
-    with patch("db.client.get_client") as mock_get, \
-         patch("config.get_settings") as mock_settings, \
-         patch("tools.social.shadow_post", new_callable=AsyncMock) as mock_shadow:
-
+    with (
+        patch("db.client.get_client") as mock_get,
+        patch("config.get_settings") as mock_settings,
+        patch("tools.social.shadow_post", new_callable=AsyncMock) as mock_shadow,
+    ):
         mock_settings.return_value.publish_mode = "shadow"
         mock_shadow.side_effect = lambda platform, run_id: f"shadow_{platform}_{run_id[:8]}"
 
@@ -278,11 +288,14 @@ async def test_platform_already_succeeded_is_skipped() -> None:
         t = MagicMock()
         client.table = MagicMock(return_value=t)
         t.select.return_value.eq.return_value.in_.return_value.execute.return_value.data = drafts
+
         # facebook already succeeded
         def check_side_effect(*args, **kwargs):
             return t.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value
 
-        t.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [{"id": "x"}]
+        t.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+            {"id": "x"}
+        ]
         t.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
         t.insert.return_value.execute.return_value.data = [{"id": "atm-1"}]
         t.update.return_value.eq.return_value.execute.return_value = MagicMock()
@@ -304,9 +317,7 @@ async def test_one_platform_fails() -> None:
     agent, emitted = make_agent()
     drafts = [draft_row(p) for p in PLATFORMS]
 
-    with patch("db.client.get_client") as mock_get, \
-         patch("config.get_settings") as mock_settings:
-
+    with patch("db.client.get_client") as mock_get, patch("config.get_settings") as mock_settings:
         mock_settings.return_value.publish_mode = "shadow"
 
         client = mock_get.return_value
@@ -343,9 +354,7 @@ async def test_all_platforms_fail_no_posted_link() -> None:
     agent, emitted = make_agent()
     drafts = [draft_row(p) for p in PLATFORMS]
 
-    with patch("db.client.get_client") as mock_get, \
-         patch("config.get_settings") as mock_settings:
-
+    with patch("db.client.get_client") as mock_get, patch("config.get_settings") as mock_settings:
         mock_settings.return_value.publish_mode = "shadow"
 
         client = mock_get.return_value

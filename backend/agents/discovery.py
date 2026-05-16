@@ -1,4 +1,5 @@
 """Discovery Agent — scrapes dprealestate.es and selects an unposted property URL."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +15,7 @@ from agents.base import BaseAgent
 
 BASE_URL = "https://dprealestate.es"
 LISTING_URL = "https://dprealestate.es/nieruchomosci/"
-PAGE_SIZE = 9   # listings per page (confirmed from live site)
+PAGE_SIZE = 9  # listings per page (confirmed from live site)
 MAX_PAGES = 15  # hard cap on pagination depth
 
 # URLs are now /mieszkanie-sprzedaz-... or /dom-sprzedaz-...
@@ -68,6 +69,7 @@ def _detect_cid(html: str) -> str | None:
     hardcoding isn't needed when the site is redeployed.
     """
     from collections import Counter
+
     counts: Counter[str] = Counter()
     for cid, _offset in _CID_RE.findall(html):
         counts[cid] += 1
@@ -80,8 +82,11 @@ class DiscoveryAgent(BaseAgent):
     async def run(self, **kwargs: Any) -> dict[str, Any]:
         bound = self.log.bind(agent="discovery")
         lf_span = (
-            self.lf_trace.start_observation(name="discovery", as_type="span", input={"listing_url": LISTING_URL})
-            if self.lf_trace else None
+            self.lf_trace.start_observation(
+                name="discovery", as_type="span", input={"listing_url": LISTING_URL}
+            )
+            if self.lf_trace
+            else None
         )
         await self.emit(self.run_id, "discovery", "discovery_started", {})
 
@@ -94,9 +99,7 @@ class DiscoveryAgent(BaseAgent):
                 lf_span.end()
             raise RuntimeError("No property listings found on dprealestate.es")
 
-        await self.emit(
-            self.run_id, "discovery", "candidates_found", {"count": len(candidates)}
-        )
+        await self.emit(self.run_id, "discovery", "candidates_found", {"count": len(candidates)})
 
         posted = await asyncio.to_thread(self._get_posted_links)
         posted_set = set(posted)
@@ -130,12 +133,14 @@ class DiscoveryAgent(BaseAgent):
             },
         )
         if lf_span:
-            lf_span.update(output={
-                "property_url": selected,
-                "candidates_total": len(candidates),
-                "candidates_fresh": len(fresh),
-                "already_posted": len(posted_set),
-            })
+            lf_span.update(
+                output={
+                    "property_url": selected,
+                    "candidates_total": len(candidates),
+                    "candidates_fresh": len(fresh),
+                    "already_posted": len(posted_set),
+                }
+            )
             lf_span.end()
         return {"property_url": selected}
 

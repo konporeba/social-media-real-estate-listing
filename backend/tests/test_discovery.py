@@ -1,10 +1,10 @@
 """Unit tests for DiscoveryAgent — no network calls, no DB."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from agents.discovery import DiscoveryAgent, _extract_property_links
 
 BASE = "https://dprealestate.es"
@@ -40,27 +40,27 @@ def test_extracts_mieszkanie_sprzedaz_links():
 def test_excludes_rentals():
     """Regex matches only sales (-sprzedaz-); rental URLs (-wynajem-) must be rejected."""
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert not any("wynajem" in l for l in links)
+    assert not any("wynajem" in lnk for lnk in links)
 
 
 def test_excludes_costa_calida():
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert not any("costa-calida" in l for l in links)
+    assert not any("costa-calida" in lnk for lnk in links)
 
 
 def test_excludes_costa_blanca():
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert not any("costa-blanca" in l for l in links)
+    assert not any("costa-blanca" in lnk for lnk in links)
 
 
 def test_excludes_non_property_paths():
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert not any("/about" in l for l in links)
+    assert not any("/about" in lnk for lnk in links)
 
 
 def test_excludes_external_domains():
     links = _extract_property_links(LISTING_HTML, BASE)
-    assert not any("external.com" in l for l in links)
+    assert not any("external.com" in lnk for lnk in links)
 
 
 def test_deduplicates_links():
@@ -75,7 +75,7 @@ def test_empty_page_returns_empty_list():
 def test_no_false_positives_on_partial_match():
     html = '<a href="/nieruchomosci/">Back</a><a href="/dom-sprzedaz-test-ODS">House</a>'
     links = _extract_property_links(html, BASE)
-    assert not any("nieruchomosci" in l and "sprzedaz" not in l for l in links)
+    assert not any("nieruchomosci" in lnk and "sprzedaz" not in lnk for lnk in links)
 
 
 # ── DiscoveryAgent helpers ────────────────────────────────────────────────────
@@ -105,7 +105,9 @@ async def test_agent_selects_unposted_url():
     fresh_url = f"{BASE}/dom-sprzedaz/new-villa-ODS"
     posted_url = f"{BASE}/mieszkanie/old-apt-OMS"
 
-    with patch.object(agent, "_collect_candidates", new=AsyncMock(return_value=[fresh_url, posted_url])):
+    with patch.object(
+        agent, "_collect_candidates", new=AsyncMock(return_value=[fresh_url, posted_url])
+    ):
         with patch.object(agent, "_get_posted_links", return_value=[posted_url]):
             result = await agent.run()
 
@@ -167,7 +169,9 @@ async def test_agent_selects_only_from_fresh_pool():
     fresh1 = f"{BASE}/dom-sprzedaz/fresh1-ODS"
     fresh2 = f"{BASE}/mieszkanie/fresh2-OMS"
 
-    with patch.object(agent, "_collect_candidates", new=AsyncMock(return_value=[posted, fresh1, fresh2])):
+    with patch.object(
+        agent, "_collect_candidates", new=AsyncMock(return_value=[posted, fresh1, fresh2])
+    ):
         with patch.object(agent, "_get_posted_links", return_value=[posted]):
             result = await agent.run()
 

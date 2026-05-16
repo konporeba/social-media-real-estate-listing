@@ -15,6 +15,7 @@ def get_client() -> Client:
         with _lock:
             if _client is None:
                 from config import get_settings
+
                 s = get_settings()
                 if not s.supabase_url:
                     raise RuntimeError("SUPABASE_URL is not configured")

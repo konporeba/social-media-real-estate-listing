@@ -14,11 +14,10 @@ State machine
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-
 from budget import check_daily_budget
 
 log = structlog.get_logger()
@@ -44,6 +43,7 @@ def _fire_and_forget(coro) -> asyncio.Task:
 
 async def _alert_failed(run_id: str, error: str) -> None:
     from tools.gmail import send_alert
+
     await send_alert(
         f"[Real Estate AI Agent] Run FAILED — {run_id[:8]}",
         f"Run {run_id} failed.\n\nError:\n{error}",
@@ -52,6 +52,7 @@ async def _alert_failed(run_id: str, error: str) -> None:
 
 async def _alert_partial(run_id: str, failed_platforms: list[str]) -> None:
     from tools.gmail import send_alert
+
     await send_alert(
         f"[Real Estate AI Agent] Run PARTIAL — {run_id[:8]}",
         f"Run {run_id} published to some platforms but not all.\n\n"
@@ -62,6 +63,7 @@ async def _alert_partial(run_id: str, failed_platforms: list[str]) -> None:
 
 async def _alert_budget_exceeded(spent: float, cap: float) -> None:
     from tools.gmail import send_alert
+
     await send_alert(
         "[Real Estate AI Agent] Daily budget cap exceeded — run refused",
         f"A new run was refused because the daily cost cap was reached.\n\n"
@@ -79,6 +81,7 @@ async def _alert_review_ready(
     image_url: str | None,
 ) -> None:
     from tools.gmail import send_review_ready
+
     await send_review_ready(
         run_id=run_id,
         property_title=property_title,
@@ -87,21 +90,22 @@ async def _alert_review_ready(
         image_url=image_url,
     )
 
+
 # ── State machine ─────────────────────────────────────────────────────────────
 
 VALID_TRANSITIONS: dict[str, frozenset[str]] = {
-    "discovering":     frozenset({"generating", "failed"}),
-    "generating":      frozenset({"validating", "failed"}),
-    "validating":      frozenset({"regenerating", "awaiting_review", "failed"}),
-    "regenerating":    frozenset({"validating", "awaiting_review", "rejected", "failed"}),
+    "discovering": frozenset({"generating", "failed"}),
+    "generating": frozenset({"validating", "failed"}),
+    "validating": frozenset({"regenerating", "awaiting_review", "failed"}),
+    "regenerating": frozenset({"validating", "awaiting_review", "rejected", "failed"}),
     "awaiting_review": frozenset({"publishing", "rejected", "failed"}),
-    "publishing":      frozenset({"completed", "partial", "failed"}),
-    "completed":       frozenset(),
+    "publishing": frozenset({"completed", "partial", "failed"}),
+    "completed": frozenset(),
     # retry-publish paths: partial fully succeeds → completed;
     # failed partially or fully succeeds → partial / completed
-    "partial":         frozenset({"completed"}),
-    "rejected":        frozenset(),
-    "failed":          frozenset({"partial", "completed"}),
+    "partial": frozenset({"completed"}),
+    "rejected": frozenset(),
+    "failed": frozenset({"partial", "completed"}),
 }
 
 TERMINAL_STATES = frozenset({"completed", "partial", "rejected", "failed"})
@@ -121,9 +125,7 @@ class BudgetExceededError(Exception):
     def __init__(self, spent: float, cap: float) -> None:
         self.spent = spent
         self.cap = cap
-        super().__init__(
-            f"Daily budget exceeded: ${spent:.4f} spent of ${cap:.2f} cap"
-        )
+        super().__init__(f"Daily budget exceeded: ${spent:.4f} spent of ${cap:.2f} cap")
 
 
 class NotAwaitingReviewError(Exception):
@@ -151,9 +153,7 @@ class Orchestrator:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    async def start(
-        self, triggered_by: str, property_url: str | None = None
-    ) -> str:
+    async def start(self, triggered_by: str, property_url: str | None = None) -> str:
         """Check budget, create run row, start pipeline in background, return run_id."""
         within, spent, cap = await asyncio.to_thread(check_daily_budget)
         if not within:
@@ -165,9 +165,11 @@ class Orchestrator:
 
         # Open a Langfuse observation (v4 API — no custom trace_id support)
         from log_setup import get_langfuse
+
         lf = get_langfuse()
         if lf:
             from config import get_settings
+
             settings = get_settings()
             trace = lf.start_observation(
                 name="pipeline_run",
@@ -199,13 +201,9 @@ class Orchestrator:
         lock = self._review_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
             if run_id not in self._review_events:
-                raise NotAwaitingReviewError(
-                    f"Run {run_id} review gate is no longer active"
-                )
+                raise NotAwaitingReviewError(f"Run {run_id} review gate is no longer active")
             if self._review_outcomes.get(run_id, _OUTCOME_UNSET) is not _OUTCOME_UNSET:
-                raise NotAwaitingReviewError(
-                    f"Run {run_id} review has already been submitted"
-                )
+                raise NotAwaitingReviewError(f"Run {run_id} review has already been submitted")
             trace = self._traces.get(run_id)
             if trace:
                 trace.score_trace(
@@ -233,13 +231,9 @@ class Orchestrator:
         lock = self._review_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
             if run_id not in self._review_events:
-                raise NotAwaitingReviewError(
-                    f"Run {run_id} review gate is no longer active"
-                )
+                raise NotAwaitingReviewError(f"Run {run_id} review gate is no longer active")
             if self._review_outcomes.get(run_id, _OUTCOME_UNSET) is not _OUTCOME_UNSET:
-                raise NotAwaitingReviewError(
-                    f"Run {run_id} review has already been submitted"
-                )
+                raise NotAwaitingReviewError(f"Run {run_id} review has already been submitted")
             trace = self._traces.get(run_id)
             if trace:
                 trace.score_trace(
@@ -262,9 +256,7 @@ class Orchestrator:
 
     # ── Pipeline (background task) ────────────────────────────────────────────
 
-    async def _run_pipeline(
-        self, run_id: str, property_url: str | None
-    ) -> None:
+    async def _run_pipeline(self, run_id: str, property_url: str | None) -> None:
         bound = log.bind(run_id=run_id)
         lf_trace = self._traces.get(run_id)
         try:
@@ -272,8 +264,7 @@ class Orchestrator:
             from agents.discovery import DiscoveryAgent
 
             if property_url:
-                await self._emit(run_id, "discovery", "url_provided",
-                                 {"url": property_url})
+                await self._emit(run_id, "discovery", "url_provided", {"url": property_url})
             else:
                 discovery = DiscoveryAgent(
                     run_id=run_id,
@@ -302,9 +293,7 @@ class Orchestrator:
             drafts = content_result["drafts"]
 
             if property_data.title:
-                await asyncio.to_thread(
-                    self._db_set_property_title, run_id, property_data.title
-                )
+                await asyncio.to_thread(self._db_set_property_title, run_id, property_data.title)
 
             await self._transition(run_id, "validating")
 
@@ -319,16 +308,16 @@ class Orchestrator:
                     logger=log.bind(run_id=run_id),
                     lf_trace=lf_trace,
                 )
-                v_result = await validator.run(
-                    property_data=property_data, drafts=drafts
-                )
+                v_result = await validator.run(property_data=property_data, drafts=drafts)
 
                 if v_result.passed:
                     break
 
                 if attempt < MAX_REGEN:
                     await self._emit(
-                        run_id, "validation", "retry_attempted",
+                        run_id,
+                        "validation",
+                        "retry_attempted",
                         {"attempt": attempt + 1, "errors": v_result.errors},
                     )
                     await self._transition(run_id, "regenerating")
@@ -350,7 +339,9 @@ class Orchestrator:
                     await self._transition(run_id, "validating")
                 else:
                     await self._emit(
-                        run_id, "validation", "validation_max_retries",
+                        run_id,
+                        "validation",
+                        "validation_max_retries",
                         {"warnings": v_result.errors},
                     )
 
@@ -358,13 +349,15 @@ class Orchestrator:
 
             # ── Notify reviewer by email ──────────────────────────────────
             await self._emit(run_id, "orchestrator", "review_email_sent", {})
-            _fire_and_forget(_alert_review_ready(
-                run_id=run_id,
-                property_title=property_data.title or "",
-                property_url=property_url,
-                drafts=drafts,
-                image_url=image_url,
-            ))
+            _fire_and_forget(
+                _alert_review_ready(
+                    run_id=run_id,
+                    property_title=property_data.title or "",
+                    property_url=property_url,
+                    drafts=drafts,
+                    image_url=image_url,
+                )
+            )
 
             # ── Human review gate ─────────────────────────────────────────
             review_event = asyncio.Event()
@@ -389,6 +382,7 @@ class Orchestrator:
             await self._transition(run_id, "publishing")
 
             from agents.publisher import PublisherAgent
+
             publisher = PublisherAgent(
                 run_id=run_id,
                 emit=self._emit,
@@ -402,16 +396,23 @@ class Orchestrator:
                 if effective:
                     await self._transition(run_id, "partial")
                     await self._emit(
-                        run_id, "orchestrator", "run_partial",
-                        {"failed": pub_result.platforms_failed,
-                         "not_configured": pub_result.platforms_not_configured},
+                        run_id,
+                        "orchestrator",
+                        "run_partial",
+                        {
+                            "failed": pub_result.platforms_failed,
+                            "not_configured": pub_result.platforms_not_configured,
+                        },
                     )
                     bound.warning("run_partial", failed=pub_result.platforms_failed)
                     self._lf_finalize_trace(
-                        run_id, "partial",
-                        {"property_url": property_url,
-                         "succeeded": pub_result.platforms_succeeded,
-                         "failed": pub_result.platforms_failed},
+                        run_id,
+                        "partial",
+                        {
+                            "property_url": property_url,
+                            "succeeded": pub_result.platforms_succeeded,
+                            "failed": pub_result.platforms_failed,
+                        },
                     )
                     _fire_and_forget(_alert_partial(run_id, pub_result.platforms_failed))
                 else:
@@ -420,13 +421,21 @@ class Orchestrator:
                     bound.error("all_platforms_failed")
             else:
                 await self._transition(run_id, "completed")
-                await self._emit(run_id, "orchestrator", "run_completed",
-                                 {"not_configured": pub_result.platforms_not_configured})
+                await self._emit(
+                    run_id,
+                    "orchestrator",
+                    "run_completed",
+                    {"not_configured": pub_result.platforms_not_configured},
+                )
                 bound.info("run_completed")
                 self._lf_finalize_trace(
-                    run_id, "completed",
-                    {"property_url": property_url, "platforms": effective,
-                     "not_configured": pub_result.platforms_not_configured},
+                    run_id,
+                    "completed",
+                    {
+                        "property_url": property_url,
+                        "platforms": effective,
+                        "not_configured": pub_result.platforms_not_configured,
+                    },
                 )
 
         except asyncio.CancelledError:
@@ -452,6 +461,7 @@ class Orchestrator:
             await self._transition(run_id, "publishing")
 
             from agents.publisher import PublisherAgent
+
             publisher = PublisherAgent(
                 run_id=run_id,
                 emit=self._emit,
@@ -462,16 +472,28 @@ class Orchestrator:
             if pub_result.platforms_failed:
                 if pub_result.effective_successes:
                     await self._transition(run_id, "partial")
-                    await self._emit(run_id, "orchestrator", "run_partial",
-                                     {"failed": pub_result.platforms_failed,
-                                      "not_configured": pub_result.platforms_not_configured})
+                    await self._emit(
+                        run_id,
+                        "orchestrator",
+                        "run_partial",
+                        {
+                            "failed": pub_result.platforms_failed,
+                            "not_configured": pub_result.platforms_not_configured,
+                        },
+                    )
                     _fire_and_forget(_alert_partial(run_id, pub_result.platforms_failed))
                 else:
-                    await self._fail(run_id, "All platforms failed: " + ", ".join(pub_result.platforms_failed))
+                    await self._fail(
+                        run_id, "All platforms failed: " + ", ".join(pub_result.platforms_failed)
+                    )
             else:
                 await self._transition(run_id, "completed")
-                await self._emit(run_id, "orchestrator", "run_completed",
-                                 {"not_configured": pub_result.platforms_not_configured})
+                await self._emit(
+                    run_id,
+                    "orchestrator",
+                    "run_completed",
+                    {"not_configured": pub_result.platforms_not_configured},
+                )
                 bound.info("run_completed_via_recovery")
         except asyncio.CancelledError:
             pass
@@ -488,6 +510,7 @@ class Orchestrator:
             current_status = run["status"]
 
             from agents.publisher import PublisherAgent
+
             publisher = PublisherAgent(
                 run_id=run_id,
                 emit=self._emit,
@@ -499,20 +522,17 @@ class Orchestrator:
             )
 
             # Count distinct platforms with a succeeded attempt after the retry
-            total_succeeded = await asyncio.to_thread(
-                self._db_count_succeeded_platforms, run_id
-            )
+            total_succeeded = await asyncio.to_thread(self._db_count_succeeded_platforms, run_id)
 
-            from tools.social import get_configured_platforms
             from config import get_settings as _get_settings
+            from tools.social import get_configured_platforms
+
             configured_count = len(get_configured_platforms(_get_settings()))
 
             if configured_count > 0 and total_succeeded >= configured_count:
                 await self._transition(run_id, "completed")
                 await asyncio.to_thread(self._db_clear_error, run_id)
-                await self._emit(
-                    run_id, "orchestrator", "run_completed", {"via": "retry"}
-                )
+                await self._emit(run_id, "orchestrator", "run_completed", {"via": "retry"})
                 bound.info("retry_completed_fully")
             elif total_succeeded > 0 and current_status == "failed":
                 await self._transition(run_id, "partial")
@@ -537,14 +557,12 @@ class Orchestrator:
                 "agent": "orchestrator",
                 "event_type": "state_transition",
                 "payload": {"status": new_status},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             run_id,
         )
 
-    async def _emit(
-        self, run_id: str, agent: str, event_type: str, payload: dict
-    ) -> None:
+    async def _emit(self, run_id: str, agent: str, event_type: str, payload: dict) -> None:
         """Persist a non-state event row and broadcast to SSE."""
         await asyncio.to_thread(self._db_insert_event, run_id, agent, event_type, payload)
         await self.hub.broadcast(
@@ -553,7 +571,7 @@ class Orchestrator:
                 "agent": agent,
                 "event_type": event_type,
                 "payload": payload,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             run_id,
         )
@@ -567,7 +585,7 @@ class Orchestrator:
                     "agent": "orchestrator",
                     "event_type": "run_failed",
                     "payload": {"error": error},
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 run_id,
             )
@@ -593,20 +611,14 @@ class Orchestrator:
     def _db_set_property_url(self, run_id: str, property_url: str) -> None:
         from db.client import get_client
 
-        get_client().table("runs").update(
-            {"property_url": property_url}
-        ).eq("id", run_id).execute()
+        get_client().table("runs").update({"property_url": property_url}).eq("id", run_id).execute()
 
     def _db_set_property_title(self, run_id: str, title: str) -> None:
         from db.client import get_client
 
-        get_client().table("runs").update(
-            {"property_title": title}
-        ).eq("id", run_id).execute()
+        get_client().table("runs").update({"property_title": title}).eq("id", run_id).execute()
 
-    def _db_create_run(
-        self, triggered_by: str, property_url: str | None
-    ) -> str:
+    def _db_create_run(self, triggered_by: str, property_url: str | None) -> str:
         from db.client import get_client
 
         result = (
@@ -627,16 +639,10 @@ class Orchestrator:
         from db.client import get_client
 
         client = get_client()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Read current status to validate the transition
-        current = (
-            client.table("runs")
-            .select("status")
-            .eq("id", run_id)
-            .limit(1)
-            .execute()
-        )
+        current = client.table("runs").select("status").eq("id", run_id).limit(1).execute()
         if not current.data:
             raise ValueError(f"Run {run_id} not found")
         current_status = current.data[0]["status"]
@@ -656,9 +662,7 @@ class Orchestrator:
             }
         ).execute()
 
-    def _db_insert_event(
-        self, run_id: str, agent: str, event_type: str, payload: dict
-    ) -> None:
+    def _db_insert_event(self, run_id: str, agent: str, event_type: str, payload: dict) -> None:
         from db.client import get_client
 
         get_client().table("run_events").insert(
@@ -673,7 +677,7 @@ class Orchestrator:
     def _db_fail(self, run_id: str, error: str) -> None:
         from db.client import get_client
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         client = get_client()
         client.table("runs").update(
             {
@@ -695,9 +699,7 @@ class Orchestrator:
     def _db_load_run(self, run_id: str) -> dict:
         from db.client import get_client
 
-        result = (
-            get_client().table("runs").select("*").eq("id", run_id).limit(1).execute()
-        )
+        result = get_client().table("runs").select("*").eq("id", run_id).limit(1).execute()
         if not result.data:
             raise ValueError(f"Run {run_id} not found")
         return result.data[0]
@@ -705,9 +707,7 @@ class Orchestrator:
     def _db_clear_error(self, run_id: str) -> None:
         from db.client import get_client
 
-        get_client().table("runs").update(
-            {"error_message": None}
-        ).eq("id", run_id).execute()
+        get_client().table("runs").update({"error_message": None}).eq("id", run_id).execute()
 
     def _db_count_succeeded_platforms(self, run_id: str) -> int:
         """Count distinct platforms that have a succeeded publish_attempt for this run."""
@@ -727,7 +727,7 @@ class Orchestrator:
         """Upsert draft_posts with the human-approved content."""
         from db.client import get_client
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         client = get_client()
 
         for platform, content in approved_posts.items():

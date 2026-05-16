@@ -30,25 +30,35 @@ CATEGORY_MAP = {
 
 # Polish labels mapped to field names (all lowercase, partial match)
 _LABEL_MAP = {
-    "cena":         "price",
-    "price":        "price",
-    "koszt":        "price",
+    "cena": "price",
+    "price": "price",
+    "koszt": "price",
     "powierzchnia": "area",
-    "area":         "area",
-    "pokoje":       "rooms",
-    "poko":         "rooms",
-    "rooms":        "rooms",
-    "sypialnia":    "rooms",
-    "piętro":       "floor",
-    "piętr":        "floor",
-    "floor":        "floor",
-    "kondygn":      "floor",
+    "area": "area",
+    "pokoje": "rooms",
+    "poko": "rooms",
+    "rooms": "rooms",
+    "sypialnia": "rooms",
+    "piętro": "floor",
+    "piętr": "floor",
+    "floor": "floor",
+    "kondygn": "floor",
 }
 
-_NAV_TERMS = frozenset({
-    "home", "nieruchomości", "kontakt", "o nas", "oferta",
-    "mieszkania", "domy", "wynajem", "sprzedaż", "powrót",
-})
+_NAV_TERMS = frozenset(
+    {
+        "home",
+        "nieruchomości",
+        "kontakt",
+        "o nas",
+        "oferta",
+        "mieszkania",
+        "domy",
+        "wynajem",
+        "sprzedaż",
+        "powrót",
+    }
+)
 
 
 async def extract_property(url: str) -> dict[str, Any]:
@@ -69,9 +79,7 @@ async def extract_property(url: str) -> dict[str, Any]:
             await browser.close()
 
 
-async def _extract_with_retry(
-    browser: Browser, url: str, max_attempts: int
-) -> dict[str, Any]:
+async def _extract_with_retry(browser: Browser, url: str, max_attempts: int) -> dict[str, Any]:
     last_exc: Exception | None = None
     for attempt in range(max_attempts):
         ctx: BrowserContext | None = None
@@ -230,9 +238,7 @@ async def _get_features(page: Page) -> list[str]:
     return out
 
 
-async def _get_image(
-    page: Page, base_url: str
-) -> tuple[str | None, bytes | None]:
+async def _get_image(page: Page, base_url: str) -> tuple[str | None, bytes | None]:
     """Return (absolute_url, raw_bytes) for the main listing photo."""
     src: str | None = await page.evaluate(
         """() => {

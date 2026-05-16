@@ -8,12 +8,13 @@ Usage:
     await send_review_ready(run_id, property_title, property_url, drafts, image_url)
     await send_daily_digest()
 """
+
 from __future__ import annotations
 
 import asyncio
 import html as _html
 import smtplib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import EmailMessage
 
 import structlog
@@ -79,9 +80,9 @@ async def send_alert(subject: str, body: str) -> None:
 # ── Review-ready notification ─────────────────────────────────────────────────
 
 _PLATFORM_META: dict[str, tuple[str, str]] = {
-    "facebook":  ("#1877f2", "Facebook"),
+    "facebook": ("#1877f2", "Facebook"),
     "instagram": ("#e1306c", "Instagram"),
-    "linkedin":  ("#0077b5", "LinkedIn"),
+    "linkedin": ("#0077b5", "LinkedIn"),
 }
 
 
@@ -99,14 +100,16 @@ def _build_review_ready_html(
     image_block = (
         f'<img src="{e(image_url)}" alt="Property photo" '
         'style="width:100%;height:180px;object-fit:cover;display:block;">'
-        if image_url else ""
+        if image_url
+        else ""
     )
 
     prop_link = (
         f'<a href="{e(property_url)}" '
         'style="color:#667eea;font-size:13px;text-decoration:none;">'
         "View listing &rarr;</a>"
-        if property_url else ""
+        if property_url
+        else ""
     )
 
     platform_sections = ""
@@ -137,11 +140,11 @@ def _build_review_ready_html(
     cta_block = (
         f'<a href="{e(review_url)}" '
         'style="display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);'
-        'color:#ffffff;font-size:15px;font-weight:600;padding:14px 44px;'
+        "color:#ffffff;font-size:15px;font-weight:600;padding:14px 44px;"
         'border-radius:8px;text-decoration:none;letter-spacing:0.3px;">'
         "Review &amp; Approve Posts</a>"
-        if review_url else
-        "<p style=\"color:#718096;font-size:14px;\">Open the Real Estate AI Agent dashboard to review and approve.</p>"
+        if review_url
+        else '<p style="color:#718096;font-size:14px;">Open the Real Estate AI Agent dashboard to review and approve.</p>'
     )
 
     run_short = run_id[:8]
@@ -289,11 +292,13 @@ async def send_review_ready(
     plain = (
         f"Hi {recipient_name},\n\n"
         f"The social media posts for '{title}' are ready for your review and approval.\n\n"
-        + ("".join(
-            f"--- {label} ---\n{drafts.get(p, '')}\n\n"
-            for p, (_, label) in _PLATFORM_META.items()
-            if drafts.get(p)
-        ))
+        + (
+            "".join(
+                f"--- {label} ---\n{drafts.get(p, '')}\n\n"
+                for p, (_, label) in _PLATFORM_META.items()
+                if drafts.get(p)
+            )
+        )
         + (f"Review here: {review_url}\n\n" if review_url else "")
         + f"Run ID: {run_id}\n"
     )
@@ -320,23 +325,13 @@ async def send_review_ready(
 
 def _build_digest_body() -> str:
     """Sync: query today's stats and format a plain-text digest body."""
-    from db.client import get_client
     from budget import get_today_cost_usd
+    from db.client import get_client
 
-    today_start = (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .isoformat()
-    )
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
     client = get_client()
-    runs = (
-        client.table("runs")
-        .select("status")
-        .gte("created_at", today_start)
-        .execute()
-        .data
-    )
+    runs = client.table("runs").select("status").gte("created_at", today_start).execute().data
 
     by_status: dict[str, int] = {}
     for r in runs:
@@ -344,7 +339,7 @@ def _build_digest_body() -> str:
         by_status[s] = by_status.get(s, 0) + 1
 
     cost = get_today_cost_usd()
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
 
     lines = [
         f"Real Estate AI Agent — Daily digest ({date_str})",
@@ -366,9 +361,9 @@ def _build_digest_body() -> str:
 
 async def send_daily_digest() -> None:
     """Build today's stats and send a digest email."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     try:
         body = await asyncio.to_thread(_build_digest_body)
         await send_alert(f"[Real Estate AI Agent] Daily digest — {date_str}", body)

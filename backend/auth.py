@@ -5,12 +5,11 @@ from typing import Any
 
 import jwt
 import structlog
+from config import get_settings
 from fastapi import HTTPException, Request, status
 from jwt import PyJWKClient
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-
-from config import get_settings
 
 log = structlog.get_logger()
 
@@ -40,6 +39,7 @@ def _get_jwks() -> PyJWKClient:
 
 
 # ── JWT verification dependency ──────────────────────────────────────────────
+
 
 async def verify_jwt(request: Request) -> dict[str, Any]:
     """FastAPI dependency — verifies CF Access JWT, stores payload in request.state."""

@@ -12,7 +12,7 @@ Pricing for claude-sonnet-4-6 (USD per 1M tokens):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 
@@ -37,11 +37,7 @@ def get_today_cost_usd() -> float:
     """Sync: return total estimated LLM spend today (UTC midnight → now) in USD."""
     from db.client import get_client
 
-    today_start = (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .isoformat()
-    )
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
     try:
         result = (

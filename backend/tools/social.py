@@ -8,10 +8,11 @@ live mode    (PUBLISH_MODE=live):
     Calls the real platform APIs (Meta Graph API, LinkedIn ugcPosts).
     Requires META_ACCESS_TOKEN, LINKEDIN_ACCESS_TOKEN etc. in .env.
 """
+
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import httpx
@@ -51,8 +52,8 @@ def _check_token_expiry(expiry_iso: str, platform: str) -> bool:
     try:
         expiry = datetime.fromisoformat(expiry_iso)
         if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        days_left = (expiry - datetime.now(timezone.utc)).days
+            expiry = expiry.replace(tzinfo=UTC)
+        days_left = (expiry - datetime.now(UTC)).days
         if days_left <= 7:
             log.warning(
                 "token_expiry_warning",
@@ -108,9 +109,7 @@ async def live_post_facebook(
             params={"message": content, "url": image_url, "access_token": page_token},
         )
     if resp.status_code != 200:
-        raise RuntimeError(
-            f"Facebook API error {resp.status_code}: {resp.text[:500]}"
-        )
+        raise RuntimeError(f"Facebook API error {resp.status_code}: {resp.text[:500]}")
     data = resp.json()
     # Graph API returns both "id" (photo) and "post_id" (page post); prefer post_id
     return data.get("post_id") or data.get("id", "unknown")
@@ -151,8 +150,7 @@ async def _wait_for_ig_container(
         if remaining <= 0:
             last = resp.json().get("status_code", "unknown") if resp.status_code == 200 else "?"
             raise RuntimeError(
-                f"Instagram media container not ready after {timeout_s}s "
-                f"(last status: {last!r})"
+                f"Instagram media container not ready after {timeout_s}s (last status: {last!r})"
             )
         await asyncio.sleep(min(poll_interval_s, remaining))
 
@@ -204,9 +202,7 @@ async def live_post_instagram(
             params={"creation_id": creation_id},
         )
         if r2.status_code != 200:
-            raise RuntimeError(
-                f"Instagram publish error {r2.status_code}: {r2.text[:500]}"
-            )
+            raise RuntimeError(f"Instagram publish error {r2.status_code}: {r2.text[:500]}")
         return r2.json()["id"]
 
 
@@ -216,8 +212,7 @@ def _assert_supabase_host(image_url: str, supabase_url: str) -> None:
     actual = (urlparse(image_url).hostname or "").lower()
     if not allowed or actual != allowed:
         raise RuntimeError(
-            f"Refusing to download image from disallowed host {actual!r} "
-            f"(expected {allowed!r})"
+            f"Refusing to download image from disallowed host {actual!r} (expected {allowed!r})"
         )
 
 
@@ -270,9 +265,7 @@ async def live_post_linkedin(
             },
         )
         if r1.status_code != 200:
-            raise RuntimeError(
-                f"LinkedIn register upload error {r1.status_code}: {r1.text[:500]}"
-            )
+            raise RuntimeError(f"LinkedIn register upload error {r1.status_code}: {r1.text[:500]}")
         upload_value = r1.json()["value"]
         upload_url: str = upload_value["uploadMechanism"][
             "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
@@ -283,18 +276,14 @@ async def live_post_linkedin(
         _assert_supabase_host(image_url, s.supabase_url)
         img = await client.get(image_url, follow_redirects=False, timeout=30.0)
         if img.status_code != 200:
-            raise RuntimeError(
-                f"Failed to download image for LinkedIn: HTTP {img.status_code}"
-            )
+            raise RuntimeError(f"Failed to download image for LinkedIn: HTTP {img.status_code}")
         r2 = await client.put(
             upload_url,
             content=img.content,
             headers={"Authorization": f"Bearer {access_token}"},
         )
         if r2.status_code not in (200, 201):
-            raise RuntimeError(
-                f"LinkedIn image upload error {r2.status_code}: {r2.text[:500]}"
-            )
+            raise RuntimeError(f"LinkedIn image upload error {r2.status_code}: {r2.text[:500]}")
 
         # Step 3: create the ugcPost with the uploaded asset
         r3 = await client.post(
@@ -317,15 +306,11 @@ async def live_post_linkedin(
                         ],
                     }
                 },
-                "visibility": {
-                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-                },
+                "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
             },
         )
         if r3.status_code not in (200, 201):
-            raise RuntimeError(
-                f"LinkedIn ugcPost error {r3.status_code}: {r3.text[:500]}"
-            )
+            raise RuntimeError(f"LinkedIn ugcPost error {r3.status_code}: {r3.text[:500]}")
         # LinkedIn returns the post URN in the X-RestLi-Id response header
         return r3.headers.get("x-restli-id") or r3.json().get("id", "unknown")
 
@@ -374,7 +359,10 @@ async def post_to_platform(
         )
     if platform == "instagram":
         return await live_post_instagram(
-            content, image_url or "", s.meta_instagram_account_id, s.meta_access_token,
+            content,
+            image_url or "",
+            s.meta_instagram_account_id,
+            s.meta_access_token,
             page_id=s.meta_facebook_page_id,
         )
     if platform == "linkedin":

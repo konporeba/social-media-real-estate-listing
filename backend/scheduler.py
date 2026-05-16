@@ -30,7 +30,6 @@ async def _fire_daily_digest() -> None:
 
 async def _fire_scheduled_trigger() -> None:
     """Insert a pending run_trigger row. The trigger_worker claims it."""
-    from datetime import datetime, timezone
 
     def _insert() -> None:
         from db.client import get_client

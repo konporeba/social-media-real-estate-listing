@@ -2,23 +2,23 @@
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import structlog
+from auth import limiter, verify_jwt
+from config import get_settings
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from log_setup import configure_logging, init_langfuse
+from models import ApproveRunRequest, RetryPublishRequest, StartRunRequest
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-
-from auth import limiter, verify_jwt
-from config import get_settings
-from log_setup import configure_logging, init_langfuse
-from models import ApproveRunRequest, RetryPublishRequest, RunDetail, StartRunRequest
 
 log = structlog.get_logger()
 
@@ -35,9 +35,7 @@ async def _stuck_review_watcher() -> None:
     while True:
         await asyncio.sleep(3600)  # check every hour
         try:
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(hours=24)
-            ).isoformat()
+            cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
 
             def _query() -> list[dict]:
                 from db.client import get_client
@@ -114,7 +112,9 @@ hub = SSEHub()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
-    log.info("startup_begin", publish_mode=settings.publish_mode, auth_disabled=settings.auth_disabled)
+    log.info(
+        "startup_begin", publish_mode=settings.publish_mode, auth_disabled=settings.auth_disabled
+    )
 
     # Seed prompts table from disk if empty
     try:
@@ -164,11 +164,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _watcher_task.cancel()
         try:
             await asyncio.wait_for(_worker_task, timeout=10.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+        except (TimeoutError, asyncio.CancelledError):
             _worker_task.cancel()
         scheduler.shutdown(wait=False)
         # Flush any pending Langfuse events before the process exits
         from log_setup import get_langfuse
+
         lf_client = get_langfuse()
         if lf_client:
             await asyncio.to_thread(lf_client.flush)
@@ -228,7 +229,7 @@ async def events(
                 try:
                     msg = await asyncio.wait_for(q.get(), timeout=15.0)
                     yield f"data: {msg}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": heartbeat\n\n"
         except asyncio.CancelledError:
             pass
@@ -270,7 +271,7 @@ async def start_run(
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=f"Daily cost cap exceeded (${exc.spent:.4f} of ${exc.cap:.2f}). "
-                   "Run refused — raise DAILY_COST_CAP_USD or wait until tomorrow.",
+            "Run refused — raise DAILY_COST_CAP_USD or wait until tomorrow.",
         )
 
     return {"run_id": run_id}
@@ -314,9 +315,7 @@ async def get_run(
         from db.client import get_client
 
         client = get_client()
-        run_result = (
-            client.table("runs").select("*").eq("id", run_id).limit(1).execute()
-        )
+        run_result = client.table("runs").select("*").eq("id", run_id).limit(1).execute()
         if not run_result.data:
             return {}
 
@@ -327,12 +326,7 @@ async def get_run(
             .order("created_at")
             .execute()
         )
-        drafts_result = (
-            client.table("draft_posts")
-            .select("*")
-            .eq("run_id", run_id)
-            .execute()
-        )
+        drafts_result = client.table("draft_posts").select("*").eq("run_id", run_id).execute()
         run = run_result.data[0]
         run["events"] = events_result.data
         run["draft_posts"] = drafts_result.data

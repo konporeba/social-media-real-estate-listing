@@ -1,4 +1,5 @@
 """Validation Layer — deterministic post checks before human review."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,24 +8,24 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
+from models import PropertyData
 
 from agents.base import BaseAgent
-from models import PropertyData
 
 log = structlog.get_logger()
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 PLATFORM_LENGTH: dict[str, tuple[int, int]] = {
-    "facebook":  (300, 1200),
+    "facebook": (300, 1200),
     "instagram": (200, 2200),
-    "linkedin":  (400, 3000),
+    "linkedin": (400, 3000),
 }
 
 PLATFORM_HASHTAGS: dict[str, tuple[int, int]] = {
-    "facebook":  (3, 5),
+    "facebook": (3, 5),
     "instagram": (10, 15),
-    "linkedin":  (0, 3),
+    "linkedin": (0, 3),
 }
 
 HASHTAG_PATTERN = re.compile(r"#\w+", re.UNICODE)
@@ -39,8 +40,8 @@ FORBIDDEN_WORDS: list[str] = []
 
 @dataclass
 class ValidationResult:
-    passed: bool                                   # True → no regenerate-class errors
-    errors: dict[str, list[str]] = field(default_factory=dict)    # per-platform
+    passed: bool  # True → no regenerate-class errors
+    errors: dict[str, list[str]] = field(default_factory=dict)  # per-platform
     warnings: dict[str, list[str]] = field(default_factory=dict)  # per-platform
 
 
@@ -142,7 +143,8 @@ class ValidationAgent(BaseAgent):
                     "price": property_data.price,
                 },
             )
-            if self.lf_trace else None
+            if self.lf_trace
+            else None
         )
         await self.emit(self.run_id, "validation", "validation_started", {})
 
@@ -178,9 +180,7 @@ class ValidationAgent(BaseAgent):
 
         # Persist issues to draft_posts so the human review UI can show them
         if not passed or any(w for w in human_warnings.values()):
-            await asyncio.to_thread(
-                self._save_validation_errors, regenerate_errors, human_warnings
-            )
+            await asyncio.to_thread(self._save_validation_errors, regenerate_errors, human_warnings)
 
         if lf_span:
             lf_span.update(
@@ -215,4 +215,3 @@ class ValidationAgent(BaseAgent):
             client.table("draft_posts").update(
                 {"validation_errors": {"errors": errs, "warnings": warns}}
             ).eq("run_id", self.run_id).eq("platform", platform).execute()
-

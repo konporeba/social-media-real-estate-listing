@@ -15,6 +15,7 @@ Outcome logic:
     - At least one platform succeeded → save property_url to posted_links.
     - Return a PublishResult; the orchestrator decides the final run state.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,7 +38,7 @@ PLATFORMS = ("facebook", "instagram", "linkedin")
 class PublishResult:
     platforms_succeeded: list[str] = field(default_factory=list)
     platforms_failed: list[str] = field(default_factory=list)
-    platforms_skipped: list[str] = field(default_factory=list)      # idempotency hit
+    platforms_skipped: list[str] = field(default_factory=list)  # idempotency hit
     platforms_not_configured: list[str] = field(default_factory=list)  # missing credentials
 
     @property
@@ -70,6 +71,7 @@ class PublisherAgent(BaseAgent):
         bound = self.log.bind(agent="publishing")
 
         from config import get_settings
+
         settings = get_settings()
 
         lf_span = (
@@ -78,11 +80,14 @@ class PublisherAgent(BaseAgent):
                 as_type="span",
                 input={"platforms": platforms_to_attempt, "mode": settings.publish_mode},
             )
-            if self.lf_trace else None
+            if self.lf_trace
+            else None
         )
 
         await self.emit(
-            self.run_id, "publishing", "publishing_started",
+            self.run_id,
+            "publishing",
+            "publishing_started",
             {"platforms": platforms_to_attempt, "mode": settings.publish_mode},
         )
 
@@ -95,7 +100,9 @@ class PublisherAgent(BaseAgent):
             if already_done:
                 bound.info("platform_already_posted", platform=platform)
                 await self.emit(
-                    self.run_id, "publishing", "platform_skipped",
+                    self.run_id,
+                    "publishing",
+                    "platform_skipped",
                     {"platform": platform, "reason": "already_succeeded"},
                 )
                 result.platforms_skipped.append(platform)
@@ -103,10 +110,13 @@ class PublisherAgent(BaseAgent):
 
             # ── Credential check ──────────────────────────────────────────────
             from tools.social import get_configured_platforms
+
             if platform not in get_configured_platforms(settings):
                 bound.info("platform_not_configured", platform=platform)
                 await self.emit(
-                    self.run_id, "publishing", "platform_not_configured",
+                    self.run_id,
+                    "publishing",
+                    "platform_not_configured",
                     {"platform": platform},
                 )
                 result.platforms_not_configured.append(platform)
@@ -116,7 +126,9 @@ class PublisherAgent(BaseAgent):
             if not content:
                 bound.warning("empty_draft_skipping", platform=platform)
                 await self.emit(
-                    self.run_id, "publishing", "platform_failed",
+                    self.run_id,
+                    "publishing",
+                    "platform_failed",
                     {"platform": platform, "error": "No draft content available — skipping"},
                 )
                 result.platforms_failed.append(platform)
@@ -126,13 +138,12 @@ class PublisherAgent(BaseAgent):
 
             attempt_n = await asyncio.to_thread(self._count_attempts, platform)
             idempotency_key = f"{self.run_id}:{platform}:{attempt_n + 1}"
-            attempt_id = await asyncio.to_thread(
-                self._insert_attempt, platform, idempotency_key
-            )
+            attempt_id = await asyncio.to_thread(self._insert_attempt, platform, idempotency_key)
 
             # ── Attempt publish ───────────────────────────────────────────────
             try:
                 from tools.social import post_to_platform
+
                 post_id = await asyncio.wait_for(
                     post_to_platform(
                         platform=platform,
@@ -148,7 +159,9 @@ class PublisherAgent(BaseAgent):
                 )
                 bound.info("platform_posted", platform=platform, post_id=post_id)
                 await self.emit(
-                    self.run_id, "publishing", "platform_posted",
+                    self.run_id,
+                    "publishing",
+                    "platform_posted",
                     {
                         "platform": platform,
                         "post_id": post_id,
@@ -159,12 +172,12 @@ class PublisherAgent(BaseAgent):
 
             except Exception as exc:
                 error = str(exc)
-                await asyncio.to_thread(
-                    self._update_attempt, attempt_id, "failed", None, error
-                )
+                await asyncio.to_thread(self._update_attempt, attempt_id, "failed", None, error)
                 bound.error("platform_failed", platform=platform, error=error)
                 await self.emit(
-                    self.run_id, "publishing", "platform_failed",
+                    self.run_id,
+                    "publishing",
+                    "platform_failed",
                     {"platform": platform, "error": error},
                 )
                 result.platforms_failed.append(platform)
@@ -175,7 +188,9 @@ class PublisherAgent(BaseAgent):
                 self._save_posted_link, property_url, result.effective_successes
             )
             await self.emit(
-                self.run_id, "publishing", "posted_link_saved",
+                self.run_id,
+                "publishing",
+                "posted_link_saved",
                 {
                     "property_url": property_url,
                     "platforms": result.effective_successes,
@@ -183,7 +198,9 @@ class PublisherAgent(BaseAgent):
             )
 
         await self.emit(
-            self.run_id, "publishing", "publishing_done",
+            self.run_id,
+            "publishing",
+            "publishing_done",
             {
                 "succeeded": result.platforms_succeeded,
                 "failed": result.platforms_failed,
@@ -209,6 +226,7 @@ class PublisherAgent(BaseAgent):
     def _load_drafts(self, platforms: list[str]) -> dict[str, dict]:
         """Returns {platform: {final_content, image_url}} for the given platforms."""
         from db.client import get_client
+
         result = (
             get_client()
             .table("draft_posts")
@@ -222,6 +240,7 @@ class PublisherAgent(BaseAgent):
     def _check_succeeded(self, platform: str) -> bool:
         """True if this platform already has a succeeded publish_attempt for this run."""
         from db.client import get_client
+
         result = (
             get_client()
             .table("publish_attempts")
@@ -237,6 +256,7 @@ class PublisherAgent(BaseAgent):
     def _count_attempts(self, platform: str) -> int:
         """Count existing attempt rows — used to build the idempotency key."""
         from db.client import get_client
+
         result = (
             get_client()
             .table("publish_attempts")
@@ -250,6 +270,7 @@ class PublisherAgent(BaseAgent):
     def _insert_attempt(self, platform: str, idempotency_key: str) -> str:
         """Insert a pending publish_attempt row and return its id."""
         from db.client import get_client
+
         result = (
             get_client()
             .table("publish_attempts")
@@ -273,6 +294,7 @@ class PublisherAgent(BaseAgent):
         error: str | None,
     ) -> None:
         from db.client import get_client
+
         update: dict[str, Any] = {"status": status}
         if post_id:
             update["external_post_id"] = post_id
@@ -283,6 +305,7 @@ class PublisherAgent(BaseAgent):
     def _save_posted_link(self, property_url: str, platforms_succeeded: list[str]) -> None:
         """Upsert posted_links, merging platforms_succeeded if a row already exists."""
         from db.client import get_client
+
         client = get_client()
         existing = (
             client.table("posted_links")
@@ -294,9 +317,9 @@ class PublisherAgent(BaseAgent):
         if existing.data:
             prev = existing.data[0].get("platforms_succeeded") or []
             merged = sorted(set(prev) | set(platforms_succeeded))
-            client.table("posted_links").update(
-                {"platforms_succeeded": merged}
-            ).eq("id", existing.data[0]["id"]).execute()
+            client.table("posted_links").update({"platforms_succeeded": merged}).eq(
+                "id", existing.data[0]["id"]
+            ).execute()
         else:
             client.table("posted_links").insert(
                 {

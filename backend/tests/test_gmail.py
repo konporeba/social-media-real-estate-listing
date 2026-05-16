@@ -2,12 +2,12 @@
 
 All SMTP and DB calls are mocked — no network, no real email.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ── send_alert ─────────────────────────────────────────────────────────────────
 
@@ -17,8 +17,7 @@ async def test_send_alert_noop_when_address_blank() -> None:
     """send_alert is a no-op when gmail_address is not set."""
     from tools.gmail import send_alert
 
-    with patch("config.get_settings") as mock_settings, \
-         patch("smtplib.SMTP") as mock_smtp:
+    with patch("config.get_settings") as mock_settings, patch("smtplib.SMTP") as mock_smtp:
         mock_settings.return_value.gmail_address = ""
         mock_settings.return_value.gmail_app_password = "pw"
         await send_alert("Test", "body")
@@ -29,8 +28,7 @@ async def test_send_alert_noop_when_address_blank() -> None:
 async def test_send_alert_noop_when_password_blank() -> None:
     from tools.gmail import send_alert
 
-    with patch("config.get_settings") as mock_settings, \
-         patch("smtplib.SMTP") as mock_smtp:
+    with patch("config.get_settings") as mock_settings, patch("smtplib.SMTP") as mock_smtp:
         mock_settings.return_value.gmail_address = "user@gmail.com"
         mock_settings.return_value.gmail_app_password = ""
         await send_alert("Test", "body")
@@ -46,8 +44,10 @@ async def test_send_alert_calls_smtp_with_starttls() -> None:
     mock_smtp_instance.__enter__ = MagicMock(return_value=mock_smtp_instance)
     mock_smtp_instance.__exit__ = MagicMock(return_value=False)
 
-    with patch("config.get_settings") as mock_settings, \
-         patch("smtplib.SMTP", return_value=mock_smtp_instance) as mock_smtp_cls:
+    with (
+        patch("config.get_settings") as mock_settings,
+        patch("smtplib.SMTP", return_value=mock_smtp_instance) as mock_smtp_cls,
+    ):
         mock_settings.return_value.gmail_address = "agent@gmail.com"
         mock_settings.return_value.gmail_app_password = "secret"
         await send_alert("Alert subject", "Alert body")
@@ -83,8 +83,10 @@ async def test_send_alert_swallows_smtp_error() -> None:
     """send_alert does not propagate SMTP failures."""
     from tools.gmail import send_alert
 
-    with patch("config.get_settings") as mock_settings, \
-         patch("smtplib.SMTP", side_effect=ConnectionRefusedError("down")):
+    with (
+        patch("config.get_settings") as mock_settings,
+        patch("smtplib.SMTP", side_effect=ConnectionRefusedError("down")),
+    ):
         mock_settings.return_value.gmail_address = "agent@gmail.com"
         mock_settings.return_value.gmail_app_password = "pw"
         # must not raise
@@ -97,8 +99,10 @@ async def test_send_alert_swallows_smtp_error() -> None:
 def test_build_digest_body_includes_run_counts() -> None:
     from tools.gmail import _build_digest_body
 
-    with patch("db.client.get_client") as mock_get, \
-         patch("budget.get_today_cost_usd", return_value=0.0512):
+    with (
+        patch("db.client.get_client") as mock_get,
+        patch("budget.get_today_cost_usd", return_value=0.0512),
+    ):
         t = MagicMock()
         mock_get.return_value.table = MagicMock(return_value=t)
         t.select.return_value.gte.return_value.execute.return_value.data = [
@@ -118,8 +122,10 @@ def test_build_digest_body_includes_run_counts() -> None:
 def test_build_digest_body_no_runs() -> None:
     from tools.gmail import _build_digest_body
 
-    with patch("db.client.get_client") as mock_get, \
-         patch("budget.get_today_cost_usd", return_value=0.0):
+    with (
+        patch("db.client.get_client") as mock_get,
+        patch("budget.get_today_cost_usd", return_value=0.0),
+    ):
         t = MagicMock()
         mock_get.return_value.table = MagicMock(return_value=t)
         t.select.return_value.gte.return_value.execute.return_value.data = []
@@ -137,8 +143,10 @@ def test_build_digest_body_no_runs() -> None:
 async def test_send_daily_digest_calls_send_alert() -> None:
     from tools.gmail import send_daily_digest
 
-    with patch("tools.gmail.send_alert", new_callable=AsyncMock) as mock_alert, \
-         patch("tools.gmail._build_digest_body", return_value="digest body"):
+    with (
+        patch("tools.gmail.send_alert", new_callable=AsyncMock) as mock_alert,
+        patch("tools.gmail._build_digest_body", return_value="digest body"),
+    ):
         await send_daily_digest()
 
     mock_alert.assert_called_once()

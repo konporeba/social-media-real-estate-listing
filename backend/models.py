@@ -7,7 +7,6 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-
 # ── Enums (mirror the Postgres enum types) ───────────────────────────────────
 
 
@@ -104,14 +103,14 @@ class PropertyData(BaseModel):
 
     url: str
     title: str
-    price: str | None = None       # e.g. "235 000 EUR"
-    area: str | None = None        # e.g. "59 m2"
-    rooms: str | None = None       # e.g. "3"
-    floor: str | None = None       # e.g. "2"
+    price: str | None = None  # e.g. "235 000 EUR"
+    area: str | None = None  # e.g. "59 m2"
+    rooms: str | None = None  # e.g. "3"
+    floor: str | None = None  # e.g. "2"
     description: str = ""
     features: list[str] = []
-    category: str = ""             # e.g. "Mieszkanie na sprzedaż"
-    image_url: str | None = None   # source URL on dprealestate.es
+    category: str = ""  # e.g. "Mieszkanie na sprzedaż"
+    image_url: str | None = None  # source URL on dprealestate.es
     image_bytes: bytes | None = None  # raw bytes, decoded from base64 in transit
 
 

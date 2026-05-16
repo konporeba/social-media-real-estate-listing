@@ -9,8 +9,8 @@ deployment the semantics are equivalent.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -22,9 +22,7 @@ log = structlog.get_logger()
 POLL_INTERVAL_S = 5
 
 
-async def run_trigger_worker(
-    stop_event: asyncio.Event, orchestrator: "Orchestrator"
-) -> None:
+async def run_trigger_worker(stop_event: asyncio.Event, orchestrator: Orchestrator) -> None:
     """Poll run_triggers every POLL_INTERVAL_S seconds until stop_event is set."""
     log.info("trigger_worker_running")
     while not stop_event.is_set():
@@ -34,16 +32,14 @@ async def run_trigger_worker(
             log.error("trigger_worker_poll_error", error=str(exc))
 
         try:
-            await asyncio.wait_for(
-                asyncio.shield(stop_event.wait()), timeout=POLL_INTERVAL_S
-            )
-        except asyncio.TimeoutError:
+            await asyncio.wait_for(asyncio.shield(stop_event.wait()), timeout=POLL_INTERVAL_S)
+        except TimeoutError:
             pass
 
     log.info("trigger_worker_stopped")
 
 
-async def _poll_once(orchestrator: "Orchestrator") -> None:
+async def _poll_once(orchestrator: Orchestrator) -> None:
     row = await asyncio.to_thread(_try_claim_trigger)
     if row:
         log.info(
@@ -77,7 +73,7 @@ def _try_claim_trigger() -> dict | None:
         .update(
             {
                 "status": "claimed",
-                "claimed_at": datetime.now(timezone.utc).isoformat(),
+                "claimed_at": datetime.now(UTC).isoformat(),
             }
         )
         .eq("id", row["id"])
@@ -91,7 +87,7 @@ _MAX_RETRIES = 3
 _RETRY_DELAYS = [2, 5, 15]  # seconds between retries for transient errors
 
 
-async def _handle_trigger(row: dict, orchestrator: "Orchestrator") -> None:
+async def _handle_trigger(row: dict, orchestrator: Orchestrator) -> None:
     """Start a run for the claimed trigger and mark it consumed."""
     from agents.orchestrator import BudgetExceededError
 
