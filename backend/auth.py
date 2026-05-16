@@ -4,12 +4,15 @@ import time
 from typing import Any
 
 import jwt
+import structlog
 from fastapi import HTTPException, Request, status
 from jwt import PyJWKClient
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from config import get_settings
+
+log = structlog.get_logger()
 
 # ── JWKS client with TTL-based refresh ──────────────────────────────────────
 
@@ -64,9 +67,10 @@ async def verify_jwt(request: Request) -> dict[str, Any]:
             detail="Token expired",
         )
     except jwt.PyJWTError as exc:
+        log.warning("jwt_verification_failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {exc}",
+            detail="Invalid token",
         )
 
     request.state.jwt_payload = payload

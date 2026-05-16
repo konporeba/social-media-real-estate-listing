@@ -23,7 +23,7 @@ POLL_INTERVAL_S = 5
 
 
 async def run_trigger_worker(
-    stop_event: asyncio.Event, orchestrator: Any
+    stop_event: asyncio.Event, orchestrator: "Orchestrator"
 ) -> None:
     """Poll run_triggers every POLL_INTERVAL_S seconds until stop_event is set."""
     log.info("trigger_worker_running")
@@ -43,7 +43,7 @@ async def run_trigger_worker(
     log.info("trigger_worker_stopped")
 
 
-async def _poll_once(orchestrator: Any) -> None:
+async def _poll_once(orchestrator: "Orchestrator") -> None:
     row = await asyncio.to_thread(_try_claim_trigger)
     if row:
         log.info(
@@ -87,29 +87,53 @@ def _try_claim_trigger() -> dict | None:
     return claim.data[0] if claim.data else None
 
 
-async def _handle_trigger(row: dict, orchestrator: Any) -> None:
+_MAX_RETRIES = 3
+_RETRY_DELAYS = [2, 5, 15]  # seconds between retries for transient errors
+
+
+async def _handle_trigger(row: dict, orchestrator: "Orchestrator") -> None:
     """Start a run for the claimed trigger and mark it consumed."""
     from agents.orchestrator import BudgetExceededError
 
     trigger_id = row["id"]
-    try:
-        run_id = await orchestrator.start(
-            triggered_by=row["source"],
-            property_url=row.get("property_url"),
-        )
-        await asyncio.to_thread(_update_trigger, trigger_id, run_id, "consumed")
-        log.info("trigger_consumed", trigger_id=trigger_id, run_id=run_id)
-    except BudgetExceededError as exc:
-        log.warning(
-            "trigger_rejected_budget",
-            trigger_id=trigger_id,
-            spent=exc.spent,
-            cap=exc.cap,
-        )
-        await asyncio.to_thread(_update_trigger, trigger_id, None, "rejected_budget")
-    except Exception as exc:
-        log.error("trigger_handle_error", trigger_id=trigger_id, error=str(exc))
-        await asyncio.to_thread(_update_trigger, trigger_id, None, "failed")
+    last_exc: Exception | None = None
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            run_id = await orchestrator.start(
+                triggered_by=row["source"],
+                property_url=row.get("property_url"),
+            )
+            await asyncio.to_thread(_update_trigger, trigger_id, run_id, "consumed")
+            log.info("trigger_consumed", trigger_id=trigger_id, run_id=run_id)
+            return
+        except BudgetExceededError as exc:
+            log.warning(
+                "trigger_rejected_budget",
+                trigger_id=trigger_id,
+                spent=exc.spent,
+                cap=exc.cap,
+            )
+            await asyncio.to_thread(_update_trigger, trigger_id, None, "rejected_budget")
+            return
+        except Exception as exc:
+            last_exc = exc
+            log.warning(
+                "trigger_handle_error_retrying",
+                trigger_id=trigger_id,
+                attempt=attempt + 1,
+                max_retries=_MAX_RETRIES,
+                error=str(exc),
+            )
+            if attempt < _MAX_RETRIES - 1:
+                await asyncio.sleep(_RETRY_DELAYS[attempt])
+
+    log.error(
+        "trigger_handle_failed_exhausted",
+        trigger_id=trigger_id,
+        error=str(last_exc),
+    )
+    await asyncio.to_thread(_update_trigger, trigger_id, None, "failed")
 
 
 def _update_trigger(trigger_id: str, run_id: str | None, status: str) -> None:

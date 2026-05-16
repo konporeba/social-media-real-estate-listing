@@ -137,11 +137,15 @@ class NotRetriableError(Exception):
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 
+_OUTCOME_UNSET = object()  # sentinel: review not yet submitted
+
+
 class Orchestrator:
     def __init__(self, hub: Any) -> None:
         self.hub = hub
         self._review_events: dict[str, asyncio.Event] = {}
-        self._review_outcomes: dict[str, dict | None] = {}
+        self._review_outcomes: dict[str, Any] = {}
+        self._review_locks: dict[str, asyncio.Lock] = {}
         # run_id → Langfuse StatefulTraceClient (None when Langfuse is disabled)
         self._traces: dict[str, Any] = {}
 
@@ -191,16 +195,26 @@ class Orchestrator:
                 )
             _fire_and_forget(self._recover_approved(run_id, approved_posts))
             return
-        # Score the trace: human approved
-        trace = self._traces.get(run_id)
-        if trace:
-            trace.score_trace(
-                name="human_review",
-                value=1.0,
-                comment="Approved by operator",
-            )
-        self._review_outcomes[run_id] = approved_posts
-        self._review_events[run_id].set()
+
+        lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            if run_id not in self._review_events:
+                raise NotAwaitingReviewError(
+                    f"Run {run_id} review gate is no longer active"
+                )
+            if self._review_outcomes.get(run_id, _OUTCOME_UNSET) is not _OUTCOME_UNSET:
+                raise NotAwaitingReviewError(
+                    f"Run {run_id} review has already been submitted"
+                )
+            trace = self._traces.get(run_id)
+            if trace:
+                trace.score_trace(
+                    name="human_review",
+                    value=1.0,
+                    comment="Approved by operator",
+                )
+            self._review_outcomes[run_id] = approved_posts
+            self._review_events[run_id].set()
 
     async def reject(self, run_id: str) -> None:
         """Signal the paused pipeline to abort."""
@@ -215,16 +229,26 @@ class Orchestrator:
             await self._emit(run_id, "orchestrator", "run_rejected", {})
             log.info("run_rejected_via_recovery", run_id=run_id)
             return
-        # Score the trace: human rejected
-        trace = self._traces.get(run_id)
-        if trace:
-            trace.score_trace(
-                name="human_review",
-                value=0.0,
-                comment="Rejected by operator",
-            )
-        self._review_outcomes[run_id] = None
-        self._review_events[run_id].set()
+
+        lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            if run_id not in self._review_events:
+                raise NotAwaitingReviewError(
+                    f"Run {run_id} review gate is no longer active"
+                )
+            if self._review_outcomes.get(run_id, _OUTCOME_UNSET) is not _OUTCOME_UNSET:
+                raise NotAwaitingReviewError(
+                    f"Run {run_id} review has already been submitted"
+                )
+            trace = self._traces.get(run_id)
+            if trace:
+                trace.score_trace(
+                    name="human_review",
+                    value=0.0,
+                    comment="Rejected by operator",
+                )
+            self._review_outcomes[run_id] = None
+            self._review_events[run_id].set()
 
     async def retry_publish(self, run_id: str, platforms: list[str]) -> None:
         """Validate state, then start a background retry for the given platforms."""
@@ -409,9 +433,11 @@ class Orchestrator:
             pass
         except Exception as exc:
             bound.error("pipeline_error", error=str(exc))
-            await self._fail(run_id, str(exc))
+            safe_error = str(exc)[:500]
+            await self._fail(run_id, safe_error)
         finally:
             self._review_events.pop(run_id, None)
+            self._review_locks.pop(run_id, None)
 
     async def _recover_approved(self, run_id: str, approved_posts: dict) -> None:
         """Re-enter the pipeline after a server restart: store approval and publish."""
@@ -449,7 +475,7 @@ class Orchestrator:
             pass
         except Exception as exc:
             bound.error("recovery_pipeline_error", error=str(exc))
-            await self._fail(run_id, str(exc))
+            await self._fail(run_id, str(exc)[:500])
 
     async def _retry_pipeline(self, run_id: str, platforms: list[str]) -> None:
         """Background retry: re-runs publisher for specified platforms only."""
@@ -545,8 +571,8 @@ class Orchestrator:
             )
             self._lf_finalize_trace(run_id, "failed", {"error": error})
             _fire_and_forget(_alert_failed(run_id, error))
-        except Exception:
-            pass
+        except Exception as fail_exc:
+            log.error("_fail_handler_error", run_id=run_id, error=str(fail_exc))
 
     def _lf_finalize_trace(self, run_id: str, status: str, output: dict) -> None:
         """Update the Langfuse observation with final status and output, then end it."""

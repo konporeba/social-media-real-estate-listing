@@ -14,7 +14,8 @@ from agents.base import BaseAgent
 
 BASE_URL = "https://dprealestate.es"
 LISTING_URL = "https://dprealestate.es/nieruchomosci/"
-PAGE_SIZE = 9  # listings per page (confirmed from live site)
+PAGE_SIZE = 9   # listings per page (confirmed from live site)
+MAX_PAGES = 15  # hard cap on pagination depth
 
 # URLs are now /mieszkanie-sprzedaz-... or /dom-sprzedaz-...
 PROPERTY_PATTERN = re.compile(r"/(mieszkanie|dom)-sprzedaz-", re.IGNORECASE)
@@ -171,7 +172,8 @@ class DiscoveryAgent(BaseAgent):
 
             # ── Subsequent pages ──────────────────────────────────────────
             offset = PAGE_SIZE
-            while True:
+            page = 1
+            while page < MAX_PAGES:
                 url = f"{LISTING_URL}?offset_{cid}={offset}&cid={cid}"
                 try:
                     resp = await client.get(url)
@@ -188,6 +190,10 @@ class DiscoveryAgent(BaseAgent):
                 all_seen.update(new)
                 results.extend(new)
                 offset += PAGE_SIZE
+                page += 1
+
+            if page >= MAX_PAGES:
+                self.log.warning("pagination_max_pages_reached", max_pages=MAX_PAGES)
 
         return results
 

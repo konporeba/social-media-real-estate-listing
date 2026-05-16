@@ -50,7 +50,7 @@ def _send_sync(
     if html_body:
         msg.add_alternative(html_body, subtype="html")
 
-    with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT) as smtp:
+    with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=10) as smtp:
         smtp.ehlo()
         smtp.starttls()
         smtp.login(address, app_password)

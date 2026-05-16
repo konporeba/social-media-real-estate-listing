@@ -19,11 +19,14 @@ def upload_image(image_bytes: bytes, run_id: str) -> str:
     bucket = settings.supabase_storage_bucket
     path = f"runs/{run_id}/property.jpg"
 
-    client.storage.from_(bucket).upload(
-        path,
-        image_bytes,
-        {"content-type": "image/jpeg", "cache-control": "3600", "upsert": "true"},
-    )
+    try:
+        client.storage.from_(bucket).upload(
+            path,
+            image_bytes,
+            {"content-type": "image/jpeg", "cache-control": "3600", "upsert": "true"},
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Image upload to Supabase Storage failed: {exc}") from exc
 
     public_url: str = client.storage.from_(bucket).get_public_url(path)
     log.info("image_uploaded", bucket=bucket, path=path, url=public_url)

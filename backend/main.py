@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import socket
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -204,26 +203,9 @@ async def get_mode(_: dict[str, Any] = Depends(verify_jwt)) -> dict[str, str]:
 
 
 @app.get("/health")
-async def health() -> dict[str, Any]:
-    """Supabase connection check + Anthropic DNS probe (no billable API call)."""
-    checks: dict[str, str] = {}
-
-    try:
-        from db.client import get_client
-
-        get_client().table("runs").select("id").limit(1).execute()
-        checks["supabase"] = "ok"
-    except Exception as exc:
-        checks["supabase"] = f"error: {exc}"
-
-    try:
-        socket.getaddrinfo("api.anthropic.com", 443, proto=socket.IPPROTO_TCP)
-        checks["anthropic_dns"] = "ok"
-    except OSError:
-        checks["anthropic_dns"] = "error: dns_failed"
-
-    ok = all(v == "ok" for v in checks.values())
-    return {"status": "ok" if ok else "degraded", "checks": checks}
+async def health() -> dict[str, str]:
+    """Liveness probe — returns ok when the process is running."""
+    return {"status": "ok"}
 
 
 # ── SSE stream ────────────────────────────────────────────────────────────────
@@ -297,9 +279,11 @@ async def start_run(
 @app.get("/runs")
 async def list_runs(
     request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     _: dict[str, Any] = Depends(verify_jwt),
 ) -> list[dict[str, Any]]:
-    """List all runs, most recent first."""
+    """List runs most recent first. Supports pagination via limit/offset."""
 
     def _query() -> list[dict]:
         from db.client import get_client
@@ -309,6 +293,8 @@ async def list_runs(
             .table("runs")
             .select("*")
             .order("created_at", desc=True)
+            .limit(limit)
+            .offset(offset)
             .execute()
         )
         return result.data

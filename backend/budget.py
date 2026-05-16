@@ -52,8 +52,8 @@ def get_today_cost_usd() -> float:
             .execute()
         )
     except Exception as exc:
-        log.warning("budget_query_failed", error=str(exc))
-        return 0.0
+        log.error("budget_query_failed", error=str(exc))
+        raise RuntimeError(f"Cannot read budget data from database: {exc}") from exc
 
     total = 0.0
     for row in result.data:
@@ -68,8 +68,8 @@ def check_daily_budget() -> tuple[bool, float, float]:
     """Return (within_budget, spent_usd, cap_usd).
 
     within_budget=True means the orchestrator may proceed with a new run.
-    Never raises — on DB error, returns (True, 0.0, cap) so we fail open
-    rather than blocking all runs silently.
+    Raises RuntimeError if the DB is unreachable — fails closed so a database
+    outage cannot bypass the budget cap.
     """
     from config import get_settings
 

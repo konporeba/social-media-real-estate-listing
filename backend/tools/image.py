@@ -11,7 +11,10 @@ JPEG_QUALITY = 85
 
 def optimize_image(raw: bytes) -> bytes:
     """Return re-encoded JPEG bytes: fits within MAX_EDGE×MAX_EDGE, EXIF stripped."""
-    img = Image.open(io.BytesIO(raw))
+    try:
+        img = Image.open(io.BytesIO(raw))
+    except Exception as exc:
+        raise ValueError(f"Cannot decode image data: {exc}") from exc
 
     # JPEG can only store RGB; also strips EXIF because we don't pass exif= to save()
     if img.mode != "RGB":

@@ -75,7 +75,11 @@ def _validate_post(
     warnings: list[str] = []
 
     # ── Length ────────────────────────────────────────────────────────────────
-    min_len, max_len = PLATFORM_LENGTH[platform]
+    limits = PLATFORM_LENGTH.get(platform)
+    if limits is None:
+        errors.append(f"unknown platform: {platform!r}")
+        return errors, warnings
+    min_len, max_len = limits
     n = len(content)
     if not (min_len <= n <= max_len):
         errors.append(f"length {n} outside [{min_len}, {max_len}]")

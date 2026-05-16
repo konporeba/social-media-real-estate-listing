@@ -111,11 +111,19 @@ class ContentAgent(BaseAgent):
 
             if data.image_bytes:
                 await self.emit(self.run_id, "content", "image_optimizing", {})
-                optimised = await asyncio.to_thread(self._optimize_image, data.image_bytes)
-                await self.emit(self.run_id, "content", "image_uploading", {})
-                image_url = await asyncio.to_thread(self._upload_image, optimised)
-                bound.info("image_ready", url=image_url)
-                await self.emit(self.run_id, "content", "image_ready", {"url": image_url})
+                try:
+                    optimised = await asyncio.to_thread(self._optimize_image, data.image_bytes)
+                    await self.emit(self.run_id, "content", "image_uploading", {})
+                    image_url = await asyncio.to_thread(self._upload_image, optimised)
+                    bound.info("image_ready", url=image_url)
+                    await self.emit(self.run_id, "content", "image_ready", {"url": image_url})
+                except Exception as exc:
+                    bound.warning("image_pipeline_failed_continuing", error=str(exc))
+                    await self.emit(
+                        self.run_id, "content", "image_skipped",
+                        {"reason": "Image processing failed — continuing without image"},
+                    )
+                    image_url = None
             else:
                 bound.warning("no_image_bytes", url=property_url)
 

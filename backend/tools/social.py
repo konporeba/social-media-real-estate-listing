@@ -10,10 +10,14 @@ live mode    (PUBLISH_MODE=live):
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 import httpx
 import structlog
+
+# Holds references to fire-and-forget background tasks to prevent GC before completion
+_background_tasks: set[asyncio.Task] = set()
 
 log = structlog.get_logger()
 
@@ -212,15 +216,13 @@ async def live_post_linkedin(
     access_token: str,
 ) -> str:
     """Register image asset, upload it, then POST /ugcPosts as organization."""
-    import asyncio
-
     from config import get_settings
 
     s = get_settings()
     if _check_token_expiry(s.linkedin_token_expiry, "linkedin"):
         from tools.gmail import send_alert
 
-        asyncio.create_task(
+        task = asyncio.create_task(
             send_alert(
                 "[Real Estate AI Agent] LinkedIn token expiring soon",
                 f"The LinkedIn access token will expire on {s.linkedin_token_expiry}.\n\n"
@@ -228,6 +230,8 @@ async def live_post_linkedin(
                 "Update LINKEDIN_ACCESS_TOKEN and LINKEDIN_TOKEN_EXPIRY in .env.",
             )
         )
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
     author_urn = f"urn:li:organization:{org_id}"
     auth_headers = {

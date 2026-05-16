@@ -87,6 +87,14 @@ def generate_posts(
         )
 
     drafts: dict[str, str] = tool_block.input
+    required_platforms = {"facebook", "instagram", "linkedin"}
+    missing = required_platforms - set(drafts.keys())
+    if missing:
+        if lf_generation:
+            lf_generation.update(level="ERROR", status_message=f"Tool response missing platforms: {missing}")
+            lf_generation.end()
+        raise ValueError(f"Claude tool response missing required platforms: {missing}")
+
     cache_read = getattr(response.usage, "cache_read_input_tokens", 0)
     cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0)
     usage = {

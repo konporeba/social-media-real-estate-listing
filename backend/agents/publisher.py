@@ -113,6 +113,15 @@ class PublisherAgent(BaseAgent):
                 continue
 
             content = drafts.get(platform, {}).get("final_content") or ""
+            if not content:
+                bound.warning("empty_draft_skipping", platform=platform)
+                await self.emit(
+                    self.run_id, "publishing", "platform_failed",
+                    {"platform": platform, "error": "No draft content available — skipping"},
+                )
+                result.platforms_failed.append(platform)
+                continue
+
             image_url = drafts.get(platform, {}).get("image_url")
 
             attempt_n = await asyncio.to_thread(self._count_attempts, platform)
@@ -124,12 +133,15 @@ class PublisherAgent(BaseAgent):
             # ── Attempt publish ───────────────────────────────────────────────
             try:
                 from tools.social import post_to_platform
-                post_id = await post_to_platform(
-                    platform=platform,
-                    content=content,
-                    image_url=image_url,
-                    run_id=self.run_id,
-                    publish_mode=settings.publish_mode,
+                post_id = await asyncio.wait_for(
+                    post_to_platform(
+                        platform=platform,
+                        content=content,
+                        image_url=image_url,
+                        run_id=self.run_id,
+                        publish_mode=settings.publish_mode,
+                    ),
+                    timeout=90.0,
                 )
                 await asyncio.to_thread(
                     self._update_attempt, attempt_id, "succeeded", post_id, None
