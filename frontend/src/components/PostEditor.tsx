@@ -12,9 +12,9 @@ const PLATFORM_LABELS: Record<PlatformType, string> = {
 };
 
 const CHAR_LIMITS: Record<PlatformType, [number, number]> = {
-  facebook:  [300,  1200],
-  instagram: [200,  2200],
-  linkedin:  [400,  3000],
+  facebook:  [400, 1200],
+  instagram: [400, 1200],
+  linkedin:  [400, 1200],
 };
 
 const PLATFORM_STYLE: Record<PlatformType, { bg: string; text: string; border: string; ring: string }> = {

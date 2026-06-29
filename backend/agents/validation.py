@@ -17,19 +17,21 @@ log = structlog.get_logger()
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 PLATFORM_LENGTH: dict[str, tuple[int, int]] = {
-    "facebook": (300, 1200),
-    "instagram": (200, 2200),
-    "linkedin": (400, 3000),
+    "facebook": (400, 1200),
+    "instagram": (400, 1200),
+    "linkedin": (400, 1200),
 }
 
 PLATFORM_HASHTAGS: dict[str, tuple[int, int]] = {
     "facebook": (3, 5),
-    "instagram": (10, 15),
+    "instagram": (3, 5),
     "linkedin": (0, 3),
 }
 
 HASHTAG_PATTERN = re.compile(r"#\w+", re.UNICODE)
 TEMPLATE_PATTERN = re.compile(r"\[.+?\]|\{.+?\}")
+
+REQUIRED_CONTACT_FOOTER = "Zapraszam do kontaktu: dominik@dprealestate.es | +34 685 728 345"
 
 # Configurable forbidden-words blocklist — flag for human, do NOT regenerate.
 FORBIDDEN_WORDS: list[str] = []
@@ -85,13 +87,21 @@ def _validate_post(
     if not (min_len <= n <= max_len):
         errors.append(f"length {n} outside [{min_len}, {max_len}]")
 
-    # ── URL present ───────────────────────────────────────────────────────────
-    if data.url and data.url not in content:
+    # ── URL present (Instagram uses "Link in bio" — no URL in caption) ────────
+    if data.url and data.url not in content and platform != "instagram":
         errors.append(f"property URL missing (expected: {data.url})")
 
     # ── Price present ─────────────────────────────────────────────────────────
     if data.price and not _price_in_text(data.price, content):
         errors.append(f"price missing (expected: {data.price})")
+
+    # ── "Cena od" prefix ──────────────────────────────────────────────────────
+    if data.price and "Cena od" not in content:
+        errors.append("price prefix 'Cena od' missing")
+
+    # ── Contact footer ────────────────────────────────────────────────────────
+    if REQUIRED_CONTACT_FOOTER not in content:
+        errors.append("required contact footer missing")
 
     # ── Hashtag count ─────────────────────────────────────────────────────────
     min_ht, max_ht = PLATFORM_HASHTAGS[platform]

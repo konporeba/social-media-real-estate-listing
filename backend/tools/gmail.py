@@ -6,12 +6,15 @@ safe to call unconditionally even in dev without credentials set.
 Usage:
     await send_alert("Subject", "Body text")
     await send_review_ready(run_id, property_title, property_url, drafts, image_url)
+    await send_reminder_email(run_id, property_title)
     await send_daily_digest()
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import html as _html
 import smtplib
 from datetime import UTC, datetime
@@ -23,6 +26,20 @@ log = structlog.get_logger()
 
 _SMTP_HOST = "smtp.gmail.com"
 _SMTP_PORT = 587
+
+
+# ── Email approval token ───────────────────────────────────────────────────────
+
+
+def build_approval_token(run_id: str, secret: str) -> str:
+    """Return a hex HMAC-SHA256 token for the given run_id."""
+    return hmac.new(secret.encode(), run_id.encode(), hashlib.sha256).hexdigest()
+
+
+def verify_approval_token(run_id: str, token: str, secret: str) -> bool:
+    """Constant-time comparison to prevent timing attacks."""
+    expected = build_approval_token(run_id, secret)
+    return hmac.compare_digest(expected, token)
 
 
 # ── Internal sync sender ───────────────────────────────────────────────────────
@@ -94,6 +111,7 @@ def _build_review_ready_html(
     drafts: dict[str, str],
     image_url: str | None,
     review_url: str,
+    approve_url: str = "",
 ) -> str:
     e = _html.escape  # shorthand
 
@@ -137,15 +155,33 @@ def _build_review_ready_html(
             </td>
           </tr>"""
 
-    cta_block = (
+    approve_button = (
+        f'<a href="{e(approve_url)}" '
+        'style="display:inline-block;background:linear-gradient(135deg,#16a34a,#15803d);'
+        "color:#ffffff;font-size:15px;font-weight:600;padding:14px 44px;"
+        'border-radius:8px;text-decoration:none;letter-spacing:0.3px;margin-bottom:12px;">'
+        "&#10003; Approve &amp; Schedule</a>"
+        if approve_url
+        else ""
+    )
+
+    review_button = (
         f'<a href="{e(review_url)}" '
         'style="display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);'
-        "color:#ffffff;font-size:15px;font-weight:600;padding:14px 44px;"
+        "color:#ffffff;font-size:14px;font-weight:600;padding:12px 36px;"
         'border-radius:8px;text-decoration:none;letter-spacing:0.3px;">'
-        "Review &amp; Approve Posts</a>"
+        "Review in Dashboard</a>"
         if review_url
-        else '<p style="color:#718096;font-size:14px;">Open the Real Estate AI Agent dashboard to review and approve.</p>'
+        else ""
     )
+
+    if approve_button or review_button:
+        cta_block = (
+            f"{approve_button}"
+            + (f'<br><br>{review_button}' if review_button else "")
+        )
+    else:
+        cta_block = '<p style="color:#718096;font-size:14px;">Open the Real Estate AI Agent dashboard to review and approve.</p>'
 
     run_short = run_id[:8]
 
@@ -276,8 +312,14 @@ async def send_review_ready(
 
     recipient_name = s.recipient_name or "there"
     recipient_email = s.recipient_email or s.gmail_address
-    review_url = f"{s.frontend_url.rstrip('/')}/runs/{run_id}" if s.frontend_url else ""
+    base_url = s.frontend_url.rstrip("/") if s.frontend_url else ""
+    review_url = f"{base_url}/runs/{run_id}" if base_url else ""
     title = property_title or "Property Listing"
+
+    approve_url = ""
+    if base_url and s.email_approval_secret:
+        token = build_approval_token(run_id, s.email_approval_secret)
+        approve_url = f"{base_url}/approve?run_id={run_id}&token={token}"
 
     html_body = _build_review_ready_html(
         run_id=run_id,
@@ -287,6 +329,7 @@ async def send_review_ready(
         drafts=drafts,
         image_url=image_url,
         review_url=review_url,
+        approve_url=approve_url,
     )
 
     plain = (
@@ -318,6 +361,127 @@ async def send_review_ready(
         log.info("review_ready_email_sent", run_id=run_id, recipient=recipient_email)
     except Exception as exc:
         log.error("review_ready_email_failed", run_id=run_id, error=str(exc))
+
+
+# ── Thursday reminder ─────────────────────────────────────────────────────────
+
+
+async def send_reminder_email(run_id: str, property_title: str | None) -> None:
+    """Send a reminder email that the run is still awaiting approval."""
+    from config import get_settings
+
+    s = get_settings()
+    if not s.gmail_address or not s.gmail_app_password:
+        log.debug("gmail_disabled_skipping_reminder", run_id=run_id)
+        return
+
+    recipient_name = s.recipient_name or "there"
+    recipient_email = s.recipient_email or s.gmail_address
+    base_url = s.frontend_url.rstrip("/") if s.frontend_url else ""
+    review_url = f"{base_url}/runs/{run_id}" if base_url else ""
+    title = property_title or "Property Listing"
+
+    approve_url = ""
+    if base_url and s.email_approval_secret:
+        token = build_approval_token(run_id, s.email_approval_secret)
+        approve_url = f"{base_url}/approve?run_id={run_id}&token={token}"
+
+    subject = f"[Reminder] Posts still awaiting approval — {title[:60]}"
+    plain = (
+        f"Hi {recipient_name},\n\n"
+        f"A reminder that the social media posts for '{title}' are still pending your approval.\n\n"
+        + (f"Approve directly: {approve_url}\n\n" if approve_url else "")
+        + (f"Or review in the dashboard: {review_url}\n\n" if review_url else "")
+        + "Publishing is scheduled for today at 5:00 PM. If no approval is received, the post will be skipped.\n\n"
+        f"Run ID: {run_id}\n"
+    )
+
+    approve_button_html = (
+        f'<a href="{_html.escape(approve_url)}" '
+        'style="display:inline-block;background:linear-gradient(135deg,#16a34a,#15803d);'
+        "color:#ffffff;font-size:15px;font-weight:600;padding:14px 44px;"
+        'border-radius:8px;text-decoration:none;">'
+        "&#10003; Approve &amp; Schedule</a>"
+        if approve_url
+        else ""
+    )
+    review_button_html = (
+        f'<a href="{_html.escape(review_url)}" '
+        'style="display:inline-block;background:#667eea;color:#ffffff;font-size:13px;'
+        'font-weight:600;padding:10px 28px;border-radius:8px;text-decoration:none;">'
+        "Open Dashboard</a>"
+        if review_url
+        else ""
+    )
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Approval Reminder</title></head>
+<body style="margin:0;padding:0;background:#f0f2f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:12px;overflow:hidden;
+                    box-shadow:0 4px 16px rgba(0,0,0,0.10);">
+        <tr>
+          <td bgcolor="#d97706"
+              style="background:linear-gradient(135deg,#b45309,#d97706);
+                     padding:30px 40px;text-align:center;">
+            <p style="color:#ffffff;margin:0;font-size:22px;font-weight:700;">&#9201; Approval Reminder</p>
+            <p style="color:#fde68a;margin:6px 0 0;font-size:13px;">Real Estate AI Agent</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 40px 28px;">
+            <h2 style="color:#1a202c;margin:0 0 12px;font-size:18px;">
+              Hi {_html.escape(recipient_name)}, your posts are still waiting!
+            </h2>
+            <p style="color:#4a5568;margin:0 0 8px;font-size:15px;line-height:1.7;">
+              The social media posts for <strong>{_html.escape(title)}</strong> have not yet been approved.
+            </p>
+            <p style="color:#e53e3e;margin:0;font-size:14px;font-weight:600;">
+              Publishing is scheduled for <strong>today at 5:00 PM</strong>.
+              If no approval is received by then, this post will be skipped.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 40px 40px;text-align:center;">
+            {approve_button_html}
+            {('<br><br>' + review_button_html) if review_button_html else ''}
+            <p style="color:#a0aec0;margin:20px 0 0;font-size:12px;">
+              Run ID: <span style="font-family:monospace;background:#edf2f7;
+                           padding:2px 8px;border-radius:4px;">{_html.escape(run_id[:8])}&hellip;</span>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f7fafc;border-top:1px solid #e2e8f0;
+                     padding:16px 40px;text-align:center;">
+            <p style="color:#a0aec0;margin:0;font-size:12px;">
+              Real Estate AI Agent &middot; Automated notification &mdash; do not reply.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+    try:
+        await asyncio.to_thread(
+            _send_sync,
+            subject,
+            plain,
+            s.gmail_address,
+            s.gmail_app_password,
+            to=recipient_email,
+            html_body=html_body,
+        )
+        log.info("reminder_email_sent", run_id=run_id, recipient=recipient_email)
+    except Exception as exc:
+        log.error("reminder_email_failed", run_id=run_id, error=str(exc))
 
 
 # ── Daily digest ───────────────────────────────────────────────────────────────

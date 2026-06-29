@@ -13,7 +13,7 @@ from auth import limiter, verify_jwt
 from config import get_settings
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from log_setup import configure_logging, init_langfuse
 from models import ApproveRunRequest, RetryPublishRequest, StartRunRequest
@@ -139,13 +139,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     orchestrator = Orchestrator(hub=hub)
     app.state.orchestrator = orchestrator
 
-    # APScheduler — writes run_trigger rows on schedule
+    # APScheduler — Wednesday content trigger, Thursday reminder + publish
     from scheduler import create_scheduler
 
-    scheduler = create_scheduler()
+    scheduler = create_scheduler(orchestrator)
     scheduler.start()
-    next_fire = scheduler.get_job("weekly_post_trigger").next_run_time
-    log.info("scheduler_started", next_run=str(next_fire))
+    next_content = scheduler.get_job("wednesday_content_trigger").next_run_time
+    next_publish = scheduler.get_job("thursday_publish").next_run_time
+    log.info("scheduler_started", next_content=str(next_content), next_publish=str(next_publish))
 
     # Trigger worker — claims pending run_trigger rows and calls the orchestrator
     from trigger_worker import run_trigger_worker
@@ -428,6 +429,87 @@ async def retry_publish(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
     return {"status": "accepted"}
+
+
+# ── Email approval (unauthenticated — protected by HMAC token) ────────────────
+
+
+@app.get("/approve", response_class=HTMLResponse)
+@limiter.limit("20/minute")
+async def email_approve(
+    request: Request,
+    run_id: str = Query(...),
+    token: str = Query(...),
+) -> HTMLResponse:
+    """One-click approval from the review email.
+
+    Verifies the HMAC token, marks all draft_posts as approved, and returns an
+    HTML confirmation page.  Publishing is deferred to Thursday 5 PM by the
+    scheduler — calling this endpoint does NOT immediately trigger the pipeline.
+    """
+    from tools.gmail import verify_approval_token
+
+    settings = get_settings()
+    if not settings.email_approval_secret:
+        raise HTTPException(status_code=404, detail="Email approval is not configured")
+
+    if not verify_approval_token(run_id, token, settings.email_approval_secret):
+        raise HTTPException(status_code=403, detail="Invalid or expired approval token")
+
+    def _mark_approved() -> bool:
+        from datetime import UTC, datetime
+
+        from db.client import get_client
+
+        try:
+            client = get_client()
+            run = client.table("runs").select("status,property_title").eq("id", run_id).limit(1).execute()
+            if not run.data:
+                return False
+            if run.data[0]["status"] != "awaiting_review":
+                return False
+            now = datetime.now(UTC).isoformat()
+            client.table("draft_posts").update({"approved_at": now}).eq("run_id", run_id).execute()
+            return True
+        except Exception:
+            return False
+
+    approved = await asyncio.to_thread(_mark_approved)
+    if not approved:
+        return HTMLResponse(
+            content="""<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:60px;">
+            <h2>&#9888; Already processed</h2>
+            <p>This run has already been approved, rejected, or published.</p>
+            </body></html>""",
+            status_code=200,
+        )
+
+    log.info("email_approval_recorded", run_id=run_id)
+    return HTMLResponse(
+        content="""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Approved</title></head>
+<body style="margin:0;padding:0;background:#f0f2f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:80px 0;">
+    <tr><td align="center">
+      <table width="480" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:12px;overflow:hidden;
+                    box-shadow:0 4px 16px rgba(0,0,0,0.10);padding:48px 40px;text-align:center;">
+        <tr><td>
+          <div style="font-size:56px;margin-bottom:16px;">&#10003;</div>
+          <h2 style="color:#16a34a;margin:0 0 12px;font-size:24px;font-weight:700;">Post Approved!</h2>
+          <p style="color:#4a5568;font-size:15px;line-height:1.7;margin:0;">
+            Your approval has been recorded.<br>
+            The post will be published automatically at <strong>Thursday 5:00 PM</strong>.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>""",
+        status_code=200,
+    )
 
 
 # ── Static frontend (production) ──────────────────────────────────────────────

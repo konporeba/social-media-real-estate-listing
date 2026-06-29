@@ -75,26 +75,26 @@ describe('PostEditor', () => {
 
   it('defaults to Facebook tab and shows its character count', () => {
     render(<PostEditor run={mockRun} />, { wrapper });
-    expect(screen.getByText(/350\s*\/\s*300–1200/)).toBeInTheDocument();
+    expect(screen.getByText(/350\s*\/\s*400–1200/)).toBeInTheDocument();
   });
 
   it('switches to Instagram tab and shows correct character count', () => {
     render(<PostEditor run={mockRun} />, { wrapper });
     fireEvent.click(tab('Instagram'));
-    expect(screen.getByText(/250\s*\/\s*200–2200/)).toBeInTheDocument();
+    expect(screen.getByText(/250\s*\/\s*400–1200/)).toBeInTheDocument();
   });
 
   it('switches to LinkedIn tab and shows correct character count', () => {
     render(<PostEditor run={mockRun} />, { wrapper });
     fireEvent.click(tab('LinkedIn'));
-    expect(screen.getByText(/450\s*\/\s*400–3000/)).toBeInTheDocument();
+    expect(screen.getByText(/450\s*\/\s*400–1200/)).toBeInTheDocument();
   });
 
   it('updates character count when user types', () => {
     render(<PostEditor run={mockRun} />, { wrapper });
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: 'X'.repeat(400) } });
-    expect(screen.getByText(/400\s*\/\s*300–1200/)).toBeInTheDocument();
+    expect(screen.getByText(/400\s*\/\s*400–1200/)).toBeInTheDocument();
   });
 
   it('shows reject confirmation dialog on Reject click', async () => {

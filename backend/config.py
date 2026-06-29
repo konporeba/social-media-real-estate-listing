@@ -24,11 +24,14 @@ class Settings(BaseSettings):
     cloudflare_access_team_domain: str = ""
     cloudflare_access_aud: str = ""
 
-    # Schedule
-    schedule_day_of_week: str = "thu"
-    schedule_hour: int = 17
+    # Schedule (Wednesday 9AM → content; Thursday 9AM → reminder; Thursday 5PM → publish)
     schedule_timezone: str = "Europe/Madrid"
     digest_hour: int = 8  # UTC hour for the daily digest email
+
+    # Email approval token secret — HMAC-SHA256 key for one-click email approval links.
+    # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+    # Leave blank to disable email approval buttons.
+    email_approval_secret: str = ""
 
     # Meta (Facebook + Instagram) — use System User long-lived token
     meta_access_token: str = ""
