@@ -1,11 +1,24 @@
 import type { Run, RunDetail } from '../types';
 
+function getAuthHeader(): Record<string, string> {
+  const token = localStorage.getItem('session_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...init?.headers },
     ...init,
   });
+
+  if (res.status === 401) {
+    localStorage.removeItem('session_token');
+    localStorage.removeItem('session_role');
+    window.location.reload();
+    return undefined as T;
+  }
+
   if (!res.ok) {
     const detail = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${detail}`);
@@ -15,6 +28,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (pin: string) =>
+    request<{ token: string; role: 'admin' | 'reviewer' }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ pin }),
+    }),
+
   getMode: () => request<{ publish_mode: string }>('/mode'),
 
   getRuns: () => request<Run[]>('/runs'),

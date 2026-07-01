@@ -63,8 +63,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     publish_mode: str = "shadow"  # shadow | live
 
-    # Set AUTH_DISABLED=true to skip CF JWT verification in local dev
+    # Set AUTH_DISABLED=true to skip PIN JWT verification in local dev
     auth_disabled: bool = False
+
+    # PIN-based session auth
+    # Generate session_secret: python -c "import secrets; print(secrets.token_hex(32))"
+    # Generate pin hashes:      python -c "import bcrypt; print(bcrypt.hashpw(b'123456', bcrypt.gensalt()).decode())"
+    session_secret: str = ""
+    admin_pin_hash: str = ""
+    reviewer_pin_hash: str = ""
 
     @property
     def cors_origins_list(self) -> list[str]:

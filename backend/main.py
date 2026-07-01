@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from auth import limiter, verify_jwt
+from auth import create_session_token, limiter, require_admin, verify_pin, verify_session
 from config import get_settings
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from log_setup import configure_logging, init_langfuse
 from models import ApproveRunRequest, RetryPublishRequest, StartRunRequest
+from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -199,7 +200,7 @@ app.add_middleware(
 
 
 @app.get("/mode")
-async def get_mode(_: dict[str, Any] = Depends(verify_jwt)) -> dict[str, str]:
+async def get_mode(_: dict[str, Any] = Depends(verify_session)) -> dict[str, str]:
     """Return current publish mode so the UI can warn when shadow mode is active."""
     return {"publish_mode": get_settings().publish_mode}
 
@@ -217,7 +218,7 @@ async def health() -> dict[str, str]:
 async def events(
     request: Request,
     run_id: str | None = Query(None),
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(verify_session),
 ) -> StreamingResponse:
     """Server-Sent Events stream. Pass ?run_id=X to scope to a single run."""
 
@@ -257,7 +258,7 @@ async def events(
 async def start_run(
     request: Request,
     body: StartRunRequest = Body(...),
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     """Budget-check, create a run, kick off the pipeline, return the run_id."""
     from agents.orchestrator import BudgetExceededError
@@ -283,7 +284,7 @@ async def list_runs(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(verify_session),
 ) -> list[dict[str, Any]]:
     """List runs most recent first. Supports pagination via limit/offset."""
 
@@ -308,7 +309,7 @@ async def list_runs(
 async def get_run(
     run_id: str,
     request: Request,
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(verify_session),
 ) -> dict[str, Any]:
     """Run details including events and draft posts."""
 
@@ -345,7 +346,7 @@ async def approve_run(
     run_id: str,
     request: Request,
     body: ApproveRunRequest = Body(...),
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(verify_session),
 ) -> dict[str, str]:
     """Approve run with final post content and resume publishing."""
     from agents.orchestrator import NotAwaitingReviewError
@@ -369,7 +370,7 @@ async def approve_run(
 async def reject_run(
     run_id: str,
     request: Request,
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(verify_session),
 ) -> dict[str, str]:
     """Reject a run — nothing will be posted."""
     from agents.orchestrator import NotAwaitingReviewError
@@ -388,7 +389,7 @@ async def reject_run(
 async def delete_run(
     run_id: str,
     request: Request,
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> None:
     """Delete a run and all associated records."""
 
@@ -415,7 +416,7 @@ async def retry_publish(
     run_id: str,
     request: Request,
     body: RetryPublishRequest = Body(...),
-    _: dict[str, Any] = Depends(verify_jwt),
+    _: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, str]:
     """Manually re-attempt publishing for specific platforms (idempotent)."""
     from agents.orchestrator import NotRetriableError
@@ -429,6 +430,31 @@ async def retry_publish(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
     return {"status": "accepted"}
+
+
+# ── PIN login (unauthenticated) ───────────────────────────────────────────────
+
+
+class _LoginBody(BaseModel):
+    pin: str
+
+
+@app.post("/auth/login")
+@limiter.limit("5/minute")
+async def auth_login(request: Request, body: _LoginBody) -> dict[str, str]:
+    """Exchange a 6-digit PIN for a signed 7-day session JWT."""
+    pin = body.pin
+    if len(pin) != 6 or not pin.isdigit():
+        raise HTTPException(status_code=422, detail="PIN must be exactly 6 digits")
+
+    role = await asyncio.to_thread(verify_pin, pin)
+    if not role:
+        log.warning("login_failed_invalid_pin")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid PIN")
+
+    token = create_session_token(role)
+    log.info("session_created", role=role)
+    return {"token": token, "role": role}
 
 
 # ── Email approval (unauthenticated — protected by HMAC token) ────────────────

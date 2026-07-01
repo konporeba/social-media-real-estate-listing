@@ -7,6 +7,7 @@ import PipelineView from './components/PipelineView';
 import PostEditor, { DraftReview } from './components/PostEditor';
 import ActivityLog from './components/ActivityLog';
 import ToastContainer from './components/Toast';
+import LoginPage from './components/LoginPage';
 import { useAppStore } from './store';
 import { useRun } from './hooks/useRuns';
 import { useRunStream } from './hooks/useRunStream';
@@ -89,11 +90,24 @@ function RunDetail({ runId }: { runId: string }) {
   );
 }
 
+function LogoutIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+    </svg>
+  );
+}
+
 export default function App() {
   const selectedRunId = useAppStore((s) => s.selectedRunId);
+  const token = useAppStore((s) => s.token);
+  const role = useAppStore((s) => s.role);
+  const clearAuth = useAppStore((s) => s.clearAuth);
   const { isDark, toggle } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+
+  if (!token) return <LoginPage />;
 
   // Auto-close mobile drawer when a run is selected
   useEffect(() => {
@@ -136,6 +150,11 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 md:gap-2">
+            {/* Role badge */}
+            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700/60 select-none">
+              {role === 'admin' ? 'Admin' : 'Reviewer'}
+            </span>
+
             <button
               onClick={toggle}
               className="p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -143,7 +162,17 @@ export default function App() {
             >
               {isDark ? <SunIcon /> : <MoonIcon />}
             </button>
-            <ManualTrigger />
+
+            {role === 'admin' && <ManualTrigger />}
+
+            <button
+              onClick={clearAuth}
+              className="p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              aria-label="Log out"
+              title="Log out"
+            >
+              <LogoutIcon />
+            </button>
           </div>
         </header>
 

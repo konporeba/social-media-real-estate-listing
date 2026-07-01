@@ -1,86 +1,112 @@
-"""Cloudflare Access JWT verification + slowapi rate-limiter key function."""
+"""PIN-based session authentication + slowapi rate-limiter.
 
-import time
+Users authenticate with a 6-digit PIN that is stored as a bcrypt hash in the
+environment.  On success the backend issues a signed HS256 JWT (7-day expiry)
+that the frontend stores in localStorage and sends as `Authorization: Bearer`.
+
+Two roles are supported:
+  admin    — full access: trigger runs, approve, reject, delete, retry publish
+  reviewer — read + approve/reject only; cannot trigger or delete runs
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 import jwt
 import structlog
 from config import get_settings
-from fastapi import HTTPException, Request, status
-from jwt import PyJWKClient
+from fastapi import Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 log = structlog.get_logger()
 
-# ── JWKS client with TTL-based refresh ──────────────────────────────────────
-
-_jwks_client: PyJWKClient | None = None
-_jwks_fetched_at: float = 0.0
-_JWKS_TTL = 300.0  # seconds
+_SESSION_EXPIRY_DAYS = 7
 
 
-def _get_jwks() -> PyJWKClient:
-    global _jwks_client, _jwks_fetched_at
-    now = time.monotonic()
-    if _jwks_client is not None and (now - _jwks_fetched_at) <= _JWKS_TTL:
-        return _jwks_client
-    try:
-        team = get_settings().cloudflare_access_team_domain
-        url = f"https://{team}/cdn-cgi/access/certs"
-        _jwks_client = PyJWKClient(url, cache_keys=True)
-        _jwks_fetched_at = now
-    except Exception as exc:
-        # If we have a previously-good client, keep using it through a transient outage.
-        if _jwks_client is None:
-            raise
-        log.warning("jwks_refresh_failed_using_stale", error=str(exc))
-    return _jwks_client
+# ── PIN verification ──────────────────────────────────────────────────────────
 
 
-# ── JWT verification dependency ──────────────────────────────────────────────
+def verify_pin(pin: str) -> str | None:
+    """Check pin against stored bcrypt hashes. Returns role string or None."""
+    s = get_settings()
+    pin_bytes = pin.encode()
+    if s.admin_pin_hash:
+        try:
+            if bcrypt.checkpw(pin_bytes, s.admin_pin_hash.encode()):
+                return "admin"
+        except Exception:
+            pass
+    if s.reviewer_pin_hash:
+        try:
+            if bcrypt.checkpw(pin_bytes, s.reviewer_pin_hash.encode()):
+                return "reviewer"
+        except Exception:
+            pass
+    return None
 
 
-async def verify_jwt(request: Request) -> dict[str, Any]:
-    """FastAPI dependency — verifies CF Access JWT, stores payload in request.state."""
+def create_session_token(role: str) -> str:
+    """Issue a signed HS256 JWT for the given role, valid for 7 days."""
+    s = get_settings()
+    payload = {
+        "sub": role,
+        "role": role,
+        "exp": datetime.now(UTC) + timedelta(days=_SESSION_EXPIRY_DAYS),
+    }
+    return jwt.encode(payload, s.session_secret, algorithm="HS256")
+
+
+# ── FastAPI auth dependencies ─────────────────────────────────────────────────
+
+
+async def verify_session(request: Request) -> dict[str, Any]:
+    """FastAPI dependency — verifies session JWT, stores payload in request.state."""
     settings = get_settings()
 
     if settings.auth_disabled:
-        payload: dict[str, Any] = {"sub": "dev@local", "email": "dev@local"}
+        payload: dict[str, Any] = {"sub": "dev", "role": "admin"}
         request.state.jwt_payload = payload
         return payload
 
-    token = request.headers.get("Cf-Access-Jwt-Assertion") or request.cookies.get(
-        "CF_Authorization"
-    )
-    if not token:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Cloudflare Access token",
+            detail="Missing session token",
         )
 
+    token = auth_header[7:]
     try:
-        signing_key = _get_jwks().get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            audience=settings.cloudflare_access_aud,
-            issuer=f"https://{settings.cloudflare_access_team_domain}",
-        )
+        payload = jwt.decode(token, settings.session_secret, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expired",
+            detail="Session expired",
         )
     except jwt.PyJWTError as exc:
-        log.warning("jwt_verification_failed", error=str(exc))
+        log.warning("session_jwt_invalid", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail="Invalid session token",
         )
 
     request.state.jwt_payload = payload
+    return payload
+
+
+async def require_admin(
+    payload: dict[str, Any] = Depends(verify_session),
+) -> dict[str, Any]:
+    """Dependency that additionally requires the admin role."""
+    if payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
     return payload
 
 
@@ -88,11 +114,7 @@ async def verify_jwt(request: Request) -> dict[str, Any]:
 
 
 def _rate_key(request: Request) -> str:
-    """Key rate limits by JWT sub (authenticated identity), not IP.
-
-    CF Access routes all traffic through the edge so IP-keying would share
-    a bucket across all users. The sub claim is stable and user-scoped.
-    """
+    """Key rate limits by JWT sub (role), falling back to IP for unauthenticated requests."""
     payload = getattr(request.state, "jwt_payload", None)
     if payload:
         return str(payload.get("sub", get_remote_address(request)))
