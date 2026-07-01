@@ -489,7 +489,13 @@ async def email_approve(
 
         try:
             client = get_client()
-            run = client.table("runs").select("status,property_title").eq("id", run_id).limit(1).execute()
+            run = (
+                client.table("runs")
+                .select("status,property_title")
+                .eq("id", run_id)
+                .limit(1)
+                .execute()
+            )
             if not run.data:
                 return False
             if run.data[0]["status"] != "awaiting_review":

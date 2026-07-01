@@ -176,10 +176,7 @@ def _build_review_ready_html(
     )
 
     if approve_button or review_button:
-        cta_block = (
-            f"{approve_button}"
-            + (f'<br><br>{review_button}' if review_button else "")
-        )
+        cta_block = f"{approve_button}" + (f"<br><br>{review_button}" if review_button else "")
     else:
         cta_block = '<p style="color:#718096;font-size:14px;">Open the Real Estate AI Agent dashboard to review and approve.</p>'
 
@@ -448,7 +445,7 @@ async def send_reminder_email(run_id: str, property_title: str | None) -> None:
         <tr>
           <td style="padding:0 40px 40px;text-align:center;">
             {approve_button_html}
-            {('<br><br>' + review_button_html) if review_button_html else ''}
+            {("<br><br>" + review_button_html) if review_button_html else ""}
             <p style="color:#a0aec0;margin:20px 0 0;font-size:12px;">
               Run ID: <span style="font-family:monospace;background:#edf2f7;
                            padding:2px 8px;border-radius:4px;">{_html.escape(run_id[:8])}&hellip;</span>
