@@ -313,7 +313,7 @@ async def send_review_ready(
     recipient_name = s.recipient_name or "there"
     recipient_email = s.recipient_email or s.gmail_address
     base_url = s.frontend_url.rstrip("/") if s.frontend_url else ""
-    review_url = f"{base_url}/runs/{run_id}" if base_url else ""
+    review_url = f"{base_url}?run_id={run_id}" if base_url else ""
     title = property_title or "Property Listing"
 
     approve_url = ""
@@ -378,7 +378,7 @@ async def send_reminder_email(run_id: str, property_title: str | None) -> None:
     recipient_name = s.recipient_name or "there"
     recipient_email = s.recipient_email or s.gmail_address
     base_url = s.frontend_url.rstrip("/") if s.frontend_url else ""
-    review_url = f"{base_url}/runs/{run_id}" if base_url else ""
+    review_url = f"{base_url}?run_id={run_id}" if base_url else ""
     title = property_title or "Property Listing"
 
     approve_url = ""

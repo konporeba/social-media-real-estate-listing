@@ -100,6 +100,7 @@ function LogoutIcon() {
 
 export default function App() {
   const selectedRunId = useAppStore((s) => s.selectedRunId);
+  const setSelectedRunId = useAppStore((s) => s.setSelectedRunId);
   const token = useAppStore((s) => s.token);
   const role = useAppStore((s) => s.role);
   const clearAuth = useAppStore((s) => s.clearAuth);
@@ -108,6 +109,18 @@ export default function App() {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
   if (!token) return <LoginPage />;
+
+  // When the user arrives via the "Review in Dashboard" email link the URL
+  // carries ?run_id=<id>. Select that run once and clean up the URL so
+  // refreshing doesn't re-select a stale run.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const runId = params.get('run_id');
+    if (runId) {
+      setSelectedRunId(runId);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   // Auto-close mobile drawer when a run is selected
   useEffect(() => {
