@@ -108,24 +108,26 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
-  if (!token) return <LoginPage />;
-
   // When the user arrives via the "Review in Dashboard" email link the URL
   // carries ?run_id=<id>. Select that run once and clean up the URL so
-  // refreshing doesn't re-select a stale run.
+  // refreshing doesn't re-select a stale run. Depends on token so it fires
+  // after login completes.
   useEffect(() => {
+    if (!token) return;
     const params = new URLSearchParams(window.location.search);
     const runId = params.get('run_id');
     if (runId) {
       setSelectedRunId(runId);
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [token]);
 
   // Auto-close mobile drawer when a run is selected
   useEffect(() => {
     setSidebarOpen(false);
   }, [selectedRunId]);
+
+  if (!token) return <LoginPage />;
 
   return (
     <ErrorBoundary>
