@@ -267,7 +267,7 @@ def _build_review_ready_html(
                 Run ID:
                 <span style="font-family:monospace;background:#edf2f7;
                              padding:2px 8px;border-radius:4px;font-size:12px;">
-                  {e(run_short)}&hellip;
+                  {e(run_short)}
                 </span>
               </p>
             </td>
@@ -448,7 +448,7 @@ async def send_reminder_email(run_id: str, property_title: str | None) -> None:
             {("<br><br>" + review_button_html) if review_button_html else ""}
             <p style="color:#a0aec0;margin:20px 0 0;font-size:12px;">
               Run ID: <span style="font-family:monospace;background:#edf2f7;
-                           padding:2px 8px;border-radius:4px;">{_html.escape(run_id[:8])}&hellip;</span>
+                           padding:2px 8px;border-radius:4px;">{_html.escape(run_id[:8])}</span>
             </p>
           </td>
         </tr>
