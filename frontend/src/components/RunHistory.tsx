@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { useRuns, useRetryPublish, useDeleteRun } from '../hooks/useRuns';
 import { useAppStore } from '../store';
 import type { Run, RunStatus } from '../types';
+
+const PAGE_SIZE = 10;
 
 const STATUS_CONFIG: Record<RunStatus, { dot: string; label: string; text: string }> = {
   pending:         { dot: 'bg-gray-500',                 label: 'pending',     text: 'text-gray-500'  },
@@ -183,6 +186,8 @@ function RunRow({ run }: { run: Run }) {
 
 export default function RunHistory() {
   const { data: runs, isLoading, error } = useRuns();
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const visibleRuns = runs?.slice(0, visibleCount);
 
   return (
     <div>
@@ -199,9 +204,17 @@ export default function RunHistory() {
         </div>
       )}
       {error && <div className="p-4 text-xs text-red-400/80">Failed to load runs.</div>}
-      {runs?.map((run) => <RunRow key={run.id} run={run} />)}
+      {visibleRuns?.map((run) => <RunRow key={run.id} run={run} />)}
       {!isLoading && !error && !runs?.length && (
         <div className="p-6 text-center text-xs text-gray-400 dark:text-gray-700">No runs yet.</div>
+      )}
+      {runs && runs.length > visibleCount && (
+        <button
+          onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+          className="w-full py-3 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 border-b border-gray-200/40 dark:border-gray-800/40 transition-colors"
+        >
+          See more ({runs.length - visibleCount} more)
+        </button>
       )}
     </div>
   );
