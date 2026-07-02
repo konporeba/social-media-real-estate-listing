@@ -55,6 +55,21 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  scheduleRun: (
+    id: string,
+    body: { facebook: string; instagram: string; linkedin: string },
+  ) =>
+    request<{ status: string }>(`/runs/${id}/schedule`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  publishNow: (id: string) =>
+    request<{ status: string }>(`/runs/${id}/publish-now`, { method: 'POST' }),
+
+  cancelSchedule: (id: string) =>
+    request<{ status: string }>(`/runs/${id}/cancel-schedule`, { method: 'PATCH' }),
+
   rejectRun: (id: string) =>
     request<{ status: string }>(`/runs/${id}/reject`, { method: 'PATCH', body: '{}' }),
 

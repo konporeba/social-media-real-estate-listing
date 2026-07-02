@@ -3,10 +3,15 @@
 State machine
 ─────────────
   discovering → generating → validating → awaiting_review → publishing → completed
-                                ↘                               ↘
-                            regenerating                      partial ──→ completed
-                                ↘                               ↑
-                              rejected              failed ──→ partial / completed
+                                ↘              ↓  ↑                          ↘
+                            regenerating    scheduled                     partial ──→ completed
+                                ↘              ↓                              ↑
+                              rejected     publishing              failed ──→ partial / completed
+
+  awaiting_review → scheduled: approved (email link or in-app "Approve & Schedule"),
+  publishing deferred to the Thursday 5 PM scheduler job.
+  scheduled → awaiting_review: operator cancelled the schedule before publish.
+  scheduled → publishing: the Thursday job, or a manual "Publish Now" override.
 
   any state → failed
 """
@@ -98,7 +103,8 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
     "generating": frozenset({"validating", "failed"}),
     "validating": frozenset({"regenerating", "awaiting_review", "failed"}),
     "regenerating": frozenset({"validating", "awaiting_review", "rejected", "failed"}),
-    "awaiting_review": frozenset({"publishing", "rejected", "failed"}),
+    "awaiting_review": frozenset({"publishing", "scheduled", "rejected", "failed"}),
+    "scheduled": frozenset({"publishing", "awaiting_review"}),
     "publishing": frozenset({"completed", "partial", "failed"}),
     "completed": frozenset(),
     # retry-publish paths: partial fully succeeds → completed;
@@ -132,6 +138,10 @@ class NotAwaitingReviewError(Exception):
     pass
 
 
+class NotScheduledError(Exception):
+    pass
+
+
 class NotRetriableError(Exception):
     pass
 
@@ -140,6 +150,15 @@ class NotRetriableError(Exception):
 
 
 _OUTCOME_UNSET = object()  # sentinel: review not yet submitted
+
+
+class _ScheduledOutcome:
+    """Review outcome: approved, but defer publishing to the Thursday 5 PM job."""
+
+    __slots__ = ("posts",)
+
+    def __init__(self, posts: dict) -> None:
+        self.posts = posts
 
 
 class Orchestrator:
@@ -189,13 +208,17 @@ class Orchestrator:
     async def resume(self, run_id: str, approved_posts: dict) -> None:
         """Signal the paused pipeline to continue with approved content."""
         if run_id not in self._review_events:
-            # Server may have restarted — verify DB state then recover directly
-            run = await asyncio.to_thread(self._db_load_run, run_id)
-            if run["status"] != "awaiting_review":
-                raise NotAwaitingReviewError(
-                    f"Run {run_id} is not awaiting review (status: {run['status']!r})"
-                )
-            _fire_and_forget(self._recover_approved(run_id, approved_posts))
+            # Server may have restarted — verify DB state then recover directly.
+            # Locked so a concurrent reject/schedule call on the same run can't
+            # race between the status check and the action.
+            lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+            async with lock:
+                run = await asyncio.to_thread(self._db_load_run, run_id)
+                if run["status"] != "awaiting_review":
+                    raise NotAwaitingReviewError(
+                        f"Run {run_id} is not awaiting review (status: {run['status']!r})"
+                    )
+                _fire_and_forget(self.approve_and_publish(run_id, approved_posts))
             return
 
         lock = self._review_locks.setdefault(run_id, asyncio.Lock())
@@ -217,15 +240,17 @@ class Orchestrator:
     async def reject(self, run_id: str) -> None:
         """Signal the paused pipeline to abort."""
         if run_id not in self._review_events:
-            # Server may have restarted — verify DB state then recover directly
-            run = await asyncio.to_thread(self._db_load_run, run_id)
-            if run["status"] != "awaiting_review":
-                raise NotAwaitingReviewError(
-                    f"Run {run_id} is not awaiting review (status: {run['status']!r})"
-                )
-            await self._transition(run_id, "rejected")
-            await self._emit(run_id, "orchestrator", "run_rejected", {})
-            log.info("run_rejected_via_recovery", run_id=run_id)
+            # Server may have restarted — verify DB state then recover directly.
+            lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+            async with lock:
+                run = await asyncio.to_thread(self._db_load_run, run_id)
+                if run["status"] != "awaiting_review":
+                    raise NotAwaitingReviewError(
+                        f"Run {run_id} is not awaiting review (status: {run['status']!r})"
+                    )
+                await self._transition(run_id, "rejected")
+                await self._emit(run_id, "orchestrator", "run_rejected", {})
+                log.info("run_rejected_via_recovery", run_id=run_id)
             return
 
         lock = self._review_locks.setdefault(run_id, asyncio.Lock())
@@ -243,6 +268,75 @@ class Orchestrator:
                 )
             self._review_outcomes[run_id] = None
             self._review_events[run_id].set()
+
+    async def schedule_for_later(self, run_id: str, approved_posts: dict | None = None) -> None:
+        """Approve content but defer publishing to the Thursday 5 PM scheduler job.
+
+        approved_posts=None means "use whatever content already exists" — the
+        email-approval link has no per-platform editing UI, so it approves
+        drafts as-is.
+        """
+        if run_id not in self._review_events:
+            # Server may have restarted — verify DB state then recover directly.
+            lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+            async with lock:
+                run = await asyncio.to_thread(self._db_load_run, run_id)
+                if run["status"] != "awaiting_review":
+                    raise NotAwaitingReviewError(
+                        f"Run {run_id} is not awaiting review (status: {run['status']!r})"
+                    )
+                posts = approved_posts
+                if posts is None:
+                    posts = await asyncio.to_thread(self._db_load_final_contents, run_id)
+                await asyncio.to_thread(self._db_store_approved, run_id, posts)
+                await self._transition(run_id, "scheduled")
+                await self._emit(run_id, "orchestrator", "run_scheduled", {})
+                log.info("run_scheduled_via_recovery", run_id=run_id)
+            return
+
+        lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            if run_id not in self._review_events:
+                raise NotAwaitingReviewError(f"Run {run_id} review gate is no longer active")
+            if self._review_outcomes.get(run_id, _OUTCOME_UNSET) is not _OUTCOME_UNSET:
+                raise NotAwaitingReviewError(f"Run {run_id} review has already been submitted")
+            posts = approved_posts
+            if posts is None:
+                posts = await asyncio.to_thread(self._db_load_final_contents, run_id)
+            trace = self._traces.get(run_id)
+            if trace:
+                trace.score_trace(
+                    name="human_review",
+                    value=1.0,
+                    comment="Approved by operator — scheduled for later publish",
+                )
+            self._review_outcomes[run_id] = _ScheduledOutcome(posts)
+            self._review_events[run_id].set()
+
+    async def publish_scheduled_run(self, run_id: str) -> None:
+        """Publish a 'scheduled' run now — the Thursday 5 PM job or a manual override."""
+        lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            run = await asyncio.to_thread(self._db_load_run, run_id)
+            if run["status"] != "scheduled":
+                raise NotScheduledError(
+                    f"Run {run_id} is not scheduled (status: {run['status']!r})"
+                )
+            approved_posts = await asyncio.to_thread(self._db_load_final_contents, run_id)
+            _fire_and_forget(self.approve_and_publish(run_id, approved_posts))
+
+    async def cancel_schedule(self, run_id: str) -> None:
+        """Revert a 'scheduled' run back to 'awaiting_review' for re-edit/reject/re-approve."""
+        lock = self._review_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            run = await asyncio.to_thread(self._db_load_run, run_id)
+            if run["status"] != "scheduled":
+                raise NotScheduledError(
+                    f"Run {run_id} is not scheduled (status: {run['status']!r})"
+                )
+            await self._transition(run_id, "awaiting_review")
+            await self._emit(run_id, "orchestrator", "schedule_cancelled", {})
+            log.info("schedule_cancelled", run_id=run_id)
 
     async def retry_publish(self, run_id: str, platforms: list[str]) -> None:
         """Validate state, then start a background retry for the given platforms."""
@@ -375,6 +469,14 @@ class Orchestrator:
                 self._lf_finalize_trace(run_id, "rejected", {})
                 return
 
+            if isinstance(outcome, _ScheduledOutcome):
+                await asyncio.to_thread(self._db_store_approved, run_id, outcome.posts)
+                await self._transition(run_id, "scheduled")
+                await self._emit(run_id, "orchestrator", "run_scheduled", {})
+                bound.info("run_scheduled")
+                self._lf_finalize_trace(run_id, "scheduled", {})
+                return
+
             # ── Store approved content ────────────────────────────────────
             await asyncio.to_thread(self._db_store_approved, run_id, outcome)
 
@@ -450,8 +552,13 @@ class Orchestrator:
             self._review_outcomes.pop(run_id, None)
             self._traces.pop(run_id, None)
 
-    async def _recover_approved(self, run_id: str, approved_posts: dict) -> None:
-        """Re-enter the pipeline after a server restart: store approval and publish."""
+    async def approve_and_publish(self, run_id: str, approved_posts: dict) -> None:
+        """Store approval, transition to publishing, and run the publisher.
+
+        Used both when resuming after a server restart (run still 'awaiting_review'
+        with a fresh HTTP approval) and when a 'scheduled' run is published — via
+        the Thursday 5 PM job or a manual "Publish Now" override.
+        """
         bound = log.bind(run_id=run_id)
         try:
             run = await asyncio.to_thread(self._db_load_run, run_id)
@@ -703,6 +810,24 @@ class Orchestrator:
         if not result.data:
             raise ValueError(f"Run {run_id} not found")
         return result.data[0]
+
+    def _db_load_final_contents(self, run_id: str) -> dict[str, str]:
+        """Read each platform's current final content (edited or generated) for a run."""
+        from db.client import get_client
+
+        drafts = (
+            get_client()
+            .table("draft_posts")
+            .select("platform, edited_content, generated_content")
+            .eq("run_id", run_id)
+            .execute()
+            .data
+        )
+        return {
+            d["platform"]: d.get("edited_content") or d["generated_content"]
+            for d in drafts
+            if d.get("edited_content") or d.get("generated_content")
+        }
 
     def _db_clear_error(self, run_id: str) -> None:
         from db.client import get_client

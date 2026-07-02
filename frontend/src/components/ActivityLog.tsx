@@ -24,7 +24,7 @@ const STAGE_AGENTS: Record<string, string[]> = {
 const STAGE_EVENT_TYPES: Record<string, string[]> = {
   discover: ['run_started', 'property_selected', 'property_discovered', 'property_not_found'],
   generate: ['content_generating', 'content_generated', 'content_validating', 'content_validated', 'content_invalid', 'content_regenerating', 'draft_saved'],
-  review:   ['awaiting_human_review', 'review_email_sent', 'run_rejected'],
+  review:   ['awaiting_human_review', 'review_email_sent', 'run_rejected', 'run_scheduled', 'schedule_cancelled'],
   publish:  ['publishing_started', 'platform_posted', 'platform_failed', 'platform_not_configured', 'platform_skipped', 'posted_link_saved', 'publishing_done'],
   done:     ['run_completed', 'run_failed', 'run_partial'],
 };
@@ -103,6 +103,14 @@ const EVENT_INFO: Record<string, EventConfig> = {
   run_rejected: {
     label:  'Posts rejected',
     detail: 'The reviewer chose not to publish this batch. The run is now closed and no posts will be sent to any platform.',
+  },
+  run_scheduled: {
+    label:  'Approved — publish scheduled',
+    detail: 'The reviewer approved these posts for automatic publishing at the next scheduled time (Thursday 5:00 PM). Use "Publish Now" to skip the wait, or "Cancel Schedule" to revert to review.',
+  },
+  schedule_cancelled: {
+    label:  'Schedule cancelled',
+    detail: 'The scheduled publish was cancelled and the run is back in review — it can be re-edited, rejected, or re-approved.',
   },
   publishing_started: {
     label:  'Publishing started',

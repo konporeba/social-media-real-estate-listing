@@ -17,6 +17,7 @@ class RunStatus(str, Enum):
     validating = "validating"
     regenerating = "regenerating"
     awaiting_review = "awaiting_review"
+    scheduled = "scheduled"
     publishing = "publishing"
     completed = "completed"
     partial = "partial"

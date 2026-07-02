@@ -5,6 +5,7 @@ import ManualTrigger from './components/ManualTrigger';
 import RunHistory from './components/RunHistory';
 import PipelineView from './components/PipelineView';
 import PostEditor, { DraftReview } from './components/PostEditor';
+import ScheduledView from './components/ScheduledView';
 import ActivityLog from './components/ActivityLog';
 import ToastContainer from './components/Toast';
 import LoginPage from './components/LoginPage';
@@ -81,6 +82,8 @@ function RunDetail({ runId }: { runId: string }) {
       <PipelineView run={run} activeFilter={stageFilter} onStageClick={handleStageClick} />
       {run.status === 'awaiting_review' ? (
         <PostEditor run={run} />
+      ) : run.status === 'scheduled' ? (
+        <ScheduledView run={run} />
       ) : showDraftReview ? (
         <DraftReview run={run} onClear={() => setStageFilter(null)} />
       ) : (

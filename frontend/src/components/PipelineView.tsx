@@ -4,7 +4,7 @@ import type { RunDetail, RunStatus } from '../types';
 const STAGES: { keys: RunStatus[]; label: string; filterKey: string }[] = [
   { keys: ['discovering'],                              label: 'Discover',  filterKey: 'discover' },
   { keys: ['generating', 'validating', 'regenerating'], label: 'Generate',  filterKey: 'generate' },
-  { keys: ['awaiting_review', 'rejected'],              label: 'Review',    filterKey: 'review'   },
+  { keys: ['awaiting_review', 'scheduled', 'rejected'], label: 'Review',    filterKey: 'review'   },
   { keys: ['publishing'],                               label: 'Publish',   filterKey: 'publish'  },
   { keys: ['completed', 'partial', 'failed'],           label: 'Done',      filterKey: 'done'     },
 ];
@@ -17,6 +17,7 @@ function stageIndex(status: RunStatus): number {
 }
 
 const STATUS_BADGE: Partial<Record<RunStatus, string>> = {
+  scheduled: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25',
   completed: 'bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/25',
   partial:   'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/25',
   rejected:  'bg-gray-500/15 text-gray-500 border-gray-500/25',

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { RunDetail, PlatformType, DraftPost } from '../types';
 import { useAppStore } from '../store';
-import { useApproveRun, useRejectRun } from '../hooks/useRuns';
+import { useApproveRun, useScheduleRun, useRejectRun } from '../hooks/useRuns';
 
 const PLATFORMS: PlatformType[] = ['facebook', 'instagram', 'linkedin'];
 
@@ -245,8 +245,9 @@ export default function PostEditor({ run }: { run: RunDetail }) {
   const platformSelections   = useAppStore((s) => s.platformSelections[run.id]);
   const setPlatformSelection = useAppStore((s) => s.setPlatformSelection);
 
-  const approveMutation = useApproveRun();
-  const rejectMutation  = useRejectRun();
+  const approveMutation  = useApproveRun();
+  const scheduleMutation = useScheduleRun();
+  const rejectMutation   = useRejectRun();
 
   useEffect(() => {
     for (const platform of PLATFORMS) {
@@ -276,7 +277,7 @@ export default function PostEditor({ run }: { run: RunDetail }) {
     if (h > 0) el.style.height = `${h}px`;
   }, [content, activeTab]);
 
-  const handleApprove = async () => {
+  const buildApprovedPosts = (): { facebook: string; instagram: string; linkedin: string } | null => {
     const posts = {
       facebook:  isPlatformSelected('facebook')  ? (buffers['facebook']  ?? getDraft(run, 'facebook')?.final_content  ?? '') : '',
       instagram: isPlatformSelected('instagram') ? (buffers['instagram'] ?? getDraft(run, 'instagram')?.final_content ?? '') : '',
@@ -292,15 +293,34 @@ export default function PostEditor({ run }: { run: RunDetail }) {
           'error',
         );
         setActiveTab(platform);
-        return;
+        return null;
       }
     }
+
+    return posts;
+  };
+
+  const handleApprove = async () => {
+    const posts = buildApprovedPosts();
+    if (!posts) return;
 
     try {
       await approveMutation.mutateAsync({ id: run.id, posts });
       addToast(`Approved ${selectedPlatforms.length} platform(s) — publishing started.`, 'success');
     } catch (e) {
       addToast(`Approve failed: ${(e as Error).message}`, 'error');
+    }
+  };
+
+  const handleSchedule = async () => {
+    const posts = buildApprovedPosts();
+    if (!posts) return;
+
+    try {
+      await scheduleMutation.mutateAsync({ id: run.id, posts });
+      addToast(`Approved ${selectedPlatforms.length} platform(s) — will publish automatically Thursday 5:00 PM.`, 'success');
+    } catch (e) {
+      addToast(`Schedule failed: ${(e as Error).message}`, 'error');
     }
   };
 
@@ -435,8 +455,22 @@ export default function PostEditor({ run }: { run: RunDetail }) {
             </span>
           )}
           <button
+            onClick={handleSchedule}
+            disabled={approveMutation.isPending || scheduleMutation.isPending || selectedPlatforms.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-amber-600 dark:text-amber-400 border border-amber-400/50 dark:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            {scheduleMutation.isPending ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-amber-400/30 border-t-amber-500 rounded-full animate-spin" />
+                Scheduling…
+              </>
+            ) : (
+              'Approve & Schedule'
+            )}
+          </button>
+          <button
             onClick={handleApprove}
-            disabled={approveMutation.isPending || selectedPlatforms.length === 0}
+            disabled={approveMutation.isPending || scheduleMutation.isPending || selectedPlatforms.length === 0}
             className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30"
           >
             {approveMutation.isPending ? (

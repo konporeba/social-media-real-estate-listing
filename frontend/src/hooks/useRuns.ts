@@ -58,6 +58,45 @@ export function useApproveRun() {
   });
 }
 
+export function useScheduleRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      posts,
+    }: {
+      id: string;
+      posts: { facebook: string; instagram: string; linkedin: string };
+    }) => api.scheduleRun(id, posts),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['runs', vars.id] });
+      qc.invalidateQueries({ queryKey: ['runs'] });
+    },
+  });
+}
+
+export function usePublishNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.publishNow(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ['runs', id] });
+      qc.invalidateQueries({ queryKey: ['runs'] });
+    },
+  });
+}
+
+export function useCancelSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.cancelSchedule(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ['runs', id] });
+      qc.invalidateQueries({ queryKey: ['runs'] });
+    },
+  });
+}
+
 export function useRejectRun() {
   const qc = useQueryClient();
   return useMutation({

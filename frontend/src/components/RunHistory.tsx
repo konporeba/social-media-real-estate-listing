@@ -12,6 +12,7 @@ const STATUS_CONFIG: Record<RunStatus, { dot: string; label: string; text: strin
   validating:      { dot: 'bg-blue-400 animate-pulse',   label: 'validating',  text: 'text-blue-400'  },
   regenerating:    { dot: 'bg-blue-400 animate-pulse',   label: 'regenerating',text: 'text-blue-400'  },
   awaiting_review: { dot: 'bg-yellow-400 animate-pulse', label: 'review',      text: 'text-yellow-400'},
+  scheduled:       { dot: 'bg-amber-400 animate-pulse',  label: 'scheduled',   text: 'text-amber-400' },
   publishing:      { dot: 'bg-green-400 animate-pulse',  label: 'publishing',  text: 'text-green-400' },
   completed:       { dot: 'bg-green-500',                label: 'done',        text: 'text-green-400' },
   partial:         { dot: 'bg-yellow-500',               label: 'partial',     text: 'text-yellow-400'},

@@ -5,6 +5,7 @@ export type RunStatus =
   | 'validating'
   | 'regenerating'
   | 'awaiting_review'
+  | 'scheduled'
   | 'publishing'
   | 'completed'
   | 'partial'

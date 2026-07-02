@@ -365,6 +365,69 @@ async def approve_run(
     return {"status": "accepted"}
 
 
+@app.patch("/runs/{run_id}/schedule", status_code=202)
+@limiter.limit("10/minute")
+async def schedule_run(
+    run_id: str,
+    request: Request,
+    body: ApproveRunRequest = Body(...),
+    _: dict[str, Any] = Depends(verify_session),
+) -> dict[str, str]:
+    """Approve run content but defer publishing to the Thursday 5 PM scheduled job."""
+    from agents.orchestrator import NotAwaitingReviewError
+
+    orchestrator = request.app.state.orchestrator
+    approved_posts = {
+        "facebook": body.facebook,
+        "instagram": body.instagram,
+        "linkedin": body.linkedin,
+    }
+    try:
+        await orchestrator.schedule_for_later(run_id, approved_posts)
+    except NotAwaitingReviewError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    return {"status": "accepted"}
+
+
+@app.post("/runs/{run_id}/publish-now", status_code=202)
+@limiter.limit("10/minute")
+async def publish_now(
+    run_id: str,
+    request: Request,
+    _: dict[str, Any] = Depends(verify_session),
+) -> dict[str, str]:
+    """Skip the Thursday wait and publish a 'scheduled' run immediately."""
+    from agents.orchestrator import NotScheduledError
+
+    orchestrator = request.app.state.orchestrator
+    try:
+        await orchestrator.publish_scheduled_run(run_id)
+    except NotScheduledError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    return {"status": "accepted"}
+
+
+@app.patch("/runs/{run_id}/cancel-schedule", status_code=202)
+@limiter.limit("10/minute")
+async def cancel_schedule(
+    run_id: str,
+    request: Request,
+    _: dict[str, Any] = Depends(verify_session),
+) -> dict[str, str]:
+    """Revert a 'scheduled' run back to awaiting_review for re-edit/reject/re-approve."""
+    from agents.orchestrator import NotScheduledError
+
+    orchestrator = request.app.state.orchestrator
+    try:
+        await orchestrator.cancel_schedule(run_id)
+    except NotScheduledError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    return {"status": "accepted"}
+
+
 @app.patch("/runs/{run_id}/reject", status_code=202)
 @limiter.limit("10/minute")
 async def reject_run(
@@ -469,10 +532,12 @@ async def email_approve(
 ) -> HTMLResponse:
     """One-click approval from the review email.
 
-    Verifies the HMAC token, marks all draft_posts as approved, and returns an
-    HTML confirmation page.  Publishing is deferred to Thursday 5 PM by the
-    scheduler — calling this endpoint does NOT immediately trigger the pipeline.
+    Verifies the HMAC token, approves all draft posts using their current
+    content, and returns an HTML confirmation page.  Publishing is deferred to
+    Thursday 5 PM by the scheduler — calling this endpoint does NOT immediately
+    trigger the pipeline.
     """
+    from agents.orchestrator import NotAwaitingReviewError
     from tools.gmail import verify_approval_token
 
     settings = get_settings()
@@ -482,32 +547,10 @@ async def email_approve(
     if not verify_approval_token(run_id, token, settings.email_approval_secret):
         raise HTTPException(status_code=403, detail="Invalid or expired approval token")
 
-    def _mark_approved() -> bool:
-        from datetime import UTC, datetime
-
-        from db.client import get_client
-
-        try:
-            client = get_client()
-            run = (
-                client.table("runs")
-                .select("status,property_title")
-                .eq("id", run_id)
-                .limit(1)
-                .execute()
-            )
-            if not run.data:
-                return False
-            if run.data[0]["status"] != "awaiting_review":
-                return False
-            now = datetime.now(UTC).isoformat()
-            client.table("draft_posts").update({"approved_at": now}).eq("run_id", run_id).execute()
-            return True
-        except Exception:
-            return False
-
-    approved = await asyncio.to_thread(_mark_approved)
-    if not approved:
+    orchestrator = request.app.state.orchestrator
+    try:
+        await orchestrator.schedule_for_later(run_id)
+    except NotAwaitingReviewError:
         return HTMLResponse(
             content="""<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:60px;">
             <h2>&#9888; Already processed</h2>
