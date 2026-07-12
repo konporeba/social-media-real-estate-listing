@@ -11,15 +11,11 @@ live mode    (PUBLISH_MODE=live):
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import httpx
 import structlog
-
-# Holds references to fire-and-forget background tasks to prevent GC before completion
-_background_tasks: set[asyncio.Task] = set()
 
 log = structlog.get_logger()
 
@@ -41,30 +37,30 @@ async def shadow_post(platform: str, run_id: str) -> str:
 
 # ── Token expiry check ─────────────────────────────────────────────────────────
 
+TOKEN_EXPIRY_WARN_DAYS = 3
 
-def _check_token_expiry(expiry_iso: str, platform: str) -> bool:
-    """Log a warning if the token is within 7 days of expiry.
 
-    Returns True if the token is expiring soon (caller may fire an email alert).
+def days_until_expiry(expiry_iso: str, platform: str) -> int | None:
+    """Whole days remaining until the token expires; negative once it has lapsed.
+
+    Compared as calendar dates, not instants: LINKEDIN_TOKEN_EXPIRY is a bare
+    date ("2026-09-10") which parses to midnight, so subtracting a mid-afternoon
+    `now` would floor to one day early and call a still-valid token expired.
+
+    Returns None when no expiry is configured or the value cannot be parsed —
+    callers treat that as "nothing to warn about".  Pure: the caller decides
+    whether to log, email, or ignore.
     """
     if not expiry_iso:
-        return False
+        return None
     try:
         expiry = datetime.fromisoformat(expiry_iso)
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=UTC)
-        days_left = (expiry - datetime.now(UTC)).days
-        if days_left <= 7:
-            log.warning(
-                "token_expiry_warning",
-                platform=platform,
-                days_left=days_left,
-                expiry=expiry_iso,
-            )
-            return True
     except ValueError:
         log.error("token_expiry_parse_error", platform=platform, value=expiry_iso)
-    return False
+        return None
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    return (expiry.date() - datetime.now(UTC).date()).days
 
 
 # ── Live helpers ───────────────────────────────────────────────────────────────
@@ -226,19 +222,10 @@ async def live_post_linkedin(
     from config import get_settings
 
     s = get_settings()
-    if _check_token_expiry(s.linkedin_token_expiry, "linkedin"):
-        from tools.gmail import send_alert
-
-        task = asyncio.create_task(
-            send_alert(
-                "[Real Estate AI Agent] LinkedIn token expiring soon",
-                f"The LinkedIn access token will expire on {s.linkedin_token_expiry}.\n\n"
-                "Refresh it before it expires to prevent publishing failures.\n"
-                "Update LINKEDIN_ACCESS_TOKEN and LINKEDIN_TOKEN_EXPIRY in .env.",
-            )
-        )
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+    days_left = days_until_expiry(s.linkedin_token_expiry, "linkedin")
+    if days_left is not None and days_left <= TOKEN_EXPIRY_WARN_DAYS:
+        # The scheduler owns the expiry email; publishing only records the fact.
+        log.warning("token_expiry_warning", platform="linkedin", days_left=days_left)
 
     author_urn = f"urn:li:organization:{org_id}"
     auth_headers = {

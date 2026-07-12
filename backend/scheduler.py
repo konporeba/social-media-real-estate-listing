@@ -1,4 +1,4 @@
-"""APScheduler — three weekly jobs that drive the content/review/publish cycle.
+"""APScheduler — the weekly content/review/publish cycle plus daily housekeeping.
 
 Wednesday 9:00 AM (schedule_timezone):
     Insert a run_trigger row → trigger_worker claims it → pipeline starts.
@@ -12,6 +12,13 @@ Thursday 9:00 AM (schedule_timezone):
 Thursday 5:00 PM (schedule_timezone):
     Publish every run in 'scheduled' status. Runs still stuck in awaiting_review
     (never approved all week) are skipped, with an alert sent instead.
+
+Daily 9:00 AM (schedule_timezone):
+    Warn RECIPIENT_EMAIL when a platform access token is within
+    TOKEN_EXPIRY_WARN_DAYS of lapsing (or has already lapsed). Deliberately
+    decoupled from publishing: the old check lived inside live_post_linkedin(),
+    so it only ever fired on a successful publish — never in shadow mode, on a
+    quiet week, or when nobody approved the drafts.
 
 Crash-safety for the Thursday publish job: orchestrator.publish_scheduled_run()
 re-reads approved content from the DB and fires a background publish, so it
@@ -135,6 +142,33 @@ async def _fire_deferred_publish(orchestrator: Orchestrator) -> None:
         log.error("deferred_publish_job_failed", error=str(exc))
 
 
+# ── Daily token expiry check ──────────────────────────────────────────────────
+
+
+async def _fire_token_expiry_check() -> None:
+    """Email the recipient when a platform token is within TOKEN_EXPIRY_WARN_DAYS.
+
+    Runs daily and independently of the publish path, so the warning still goes
+    out in shadow mode, on weeks with no run, and when nothing gets approved.
+    """
+    from config import get_settings
+    from tools.gmail import send_token_expiry_warning
+    from tools.social import TOKEN_EXPIRY_WARN_DAYS, days_until_expiry
+
+    settings = get_settings()
+    expiries = {"linkedin": settings.linkedin_token_expiry}
+
+    for platform, expiry_iso in expiries.items():
+        days_left = days_until_expiry(expiry_iso, platform)
+        if days_left is None or days_left > TOKEN_EXPIRY_WARN_DAYS:
+            continue
+        log.warning("token_expiry_warning", platform=platform, days_left=days_left)
+        try:
+            await send_token_expiry_warning(platform, expiry_iso, days_left)
+        except Exception as exc:
+            log.error("token_expiry_check_failed", platform=platform, error=str(exc))
+
+
 # ── Daily digest ──────────────────────────────────────────────────────────────
 
 
@@ -198,6 +232,16 @@ def create_scheduler(orchestrator: Orchestrator) -> AsyncIOScheduler:
         hour=settings.digest_hour,
         minute=0,
         id="daily_digest",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    scheduler.add_job(
+        _fire_token_expiry_check,
+        trigger="cron",
+        hour=9,
+        minute=0,
+        id="daily_token_expiry_check",
         replace_existing=True,
         misfire_grace_time=3600,
     )

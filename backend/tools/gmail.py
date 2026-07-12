@@ -7,6 +7,7 @@ Usage:
     await send_alert("Subject", "Body text")
     await send_review_ready(run_id, property_title, property_url, drafts, image_url)
     await send_reminder_email(run_id, property_title)
+    await send_token_expiry_warning(platform, expiry_iso, days_left)
     await send_daily_digest()
 """
 
@@ -413,7 +414,11 @@ async def send_reminder_email(run_id: str, property_title: str | None) -> None:
 
     html_body = f"""<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>Approval Reminder</title></head>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Approval Reminder</title>
+</head>
 <body style="margin:0;padding:0;background:#f0f2f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:40px 0;">
     <tr><td align="center">
@@ -479,6 +484,130 @@ async def send_reminder_email(run_id: str, property_title: str | None) -> None:
         log.info("reminder_email_sent", run_id=run_id, recipient=recipient_email)
     except Exception as exc:
         log.error("reminder_email_failed", run_id=run_id, error=str(exc))
+
+
+# ── Token expiry warning ───────────────────────────────────────────────────────
+
+
+async def send_token_expiry_warning(platform: str, expiry_iso: str, days_left: int) -> None:
+    """Warn the recipient that a social platform access token is about to lapse.
+
+    Addressed to RECIPIENT_EMAIL because the token belongs to the client's own
+    LinkedIn/Meta account — they are the only one who can regenerate it.
+    """
+    from config import get_settings
+
+    s = get_settings()
+    if not s.gmail_address or not s.gmail_app_password:
+        log.debug("gmail_disabled_skipping_token_warning", platform=platform)
+        return
+
+    recipient_name = s.recipient_name or "there"
+    recipient_email = s.recipient_email or s.gmail_address
+    label = _PLATFORM_META.get(platform, ("", platform.capitalize()))[1]
+    expired = days_left < 0
+
+    if expired:
+        subject = f"[Action required] {label} token has expired — posts are not publishing"
+        headline = f"The {label} access token expired on {expiry_iso}."
+        consequence = (
+            f"{label} posts are failing right now. Publishing will stay broken "
+            "until a new token is provided."
+        )
+        accent, accent_dark = "#e53e3e", "#c53030"
+        title_text, banner = "Token Expired", "&#9888; Token Expired"
+    else:
+        day_word = "day" if days_left == 1 else "days"
+        when = "today" if days_left == 0 else f"in {days_left} {day_word}"
+        subject = f"[Action required] {label} token expires {when} ({expiry_iso})"
+        headline = f"The {label} access token expires on {expiry_iso} — {when}."
+        consequence = (
+            f"Once it lapses, {label} posts will stop publishing until a new token is provided."
+        )
+        accent, accent_dark = "#d97706", "#b45309"
+        title_text, banner = "Token Expiring Soon", "&#9201; Token Expiring Soon"
+
+    plain = (
+        f"Hi {recipient_name},\n\n"
+        f"{headline}\n\n"
+        f"{consequence}\n\n"
+        f"To fix it, generate a fresh {label} access token and send it over, along with "
+        "its new expiry date. The steps are in the CREDENTIALS_SETUP guide we shared.\n\n"
+        f"Platform: {label}\n"
+        f"Expiry date: {expiry_iso}\n"
+    )
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>{_html.escape(title_text)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f0f2f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:12px;overflow:hidden;
+                    box-shadow:0 4px 16px rgba(0,0,0,0.10);">
+        <tr>
+          <td bgcolor="{accent}"
+              style="background:linear-gradient(135deg,{accent_dark},{accent});
+                     padding:30px 40px;text-align:center;">
+            <p style="color:#ffffff;margin:0;font-size:22px;font-weight:700;">{banner}</p>
+            <p style="color:#ffffff;opacity:0.85;margin:6px 0 0;font-size:13px;">Real Estate AI Agent</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 40px 28px;">
+            <h2 style="color:#1a202c;margin:0 0 12px;font-size:18px;">
+              Hi {_html.escape(recipient_name)}, we need a new {_html.escape(label)} token.
+            </h2>
+            <p style="color:#4a5568;margin:0 0 8px;font-size:15px;line-height:1.7;">
+              {_html.escape(headline)}
+            </p>
+            <p style="color:{accent_dark};margin:0 0 16px;font-size:14px;font-weight:600;">
+              {_html.escape(consequence)}
+            </p>
+            <p style="color:#4a5568;margin:0;font-size:15px;line-height:1.7;">
+              Please generate a fresh {_html.escape(label)} access token and send it over
+              together with its new expiry date. The steps are in the
+              <strong>CREDENTIALS_SETUP</strong> guide we shared.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f7fafc;border-top:1px solid #e2e8f0;
+                     padding:16px 40px;text-align:center;">
+            <p style="color:#a0aec0;margin:0;font-size:12px;">
+              Real Estate AI Agent &middot; Automated notification &mdash; do not reply.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+    try:
+        await asyncio.to_thread(
+            _send_sync,
+            subject,
+            plain,
+            s.gmail_address,
+            s.gmail_app_password,
+            to=recipient_email,
+            html_body=html_body,
+        )
+        log.info(
+            "token_expiry_email_sent",
+            platform=platform,
+            days_left=days_left,
+            recipient=recipient_email,
+        )
+    except Exception as exc:
+        log.error("token_expiry_email_failed", platform=platform, error=str(exc))
 
 
 # ── Daily digest ───────────────────────────────────────────────────────────────
