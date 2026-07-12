@@ -97,8 +97,13 @@ class ContentAgent(BaseAgent):
         )
 
         # ── 1–3. Extraction + image (skipped on regen) ─────────────────────────
+        ig_image_url: str | None = None
         if is_regen:
             data = existing_data
+            # _save_drafts deletes and re-inserts every row, so the padded Instagram
+            # URL must be carried over — the bytes are still in Storage, only the
+            # pointer would be lost.
+            ig_image_url = await asyncio.to_thread(self._load_existing_ig_image_url)
         else:
             await self.emit(self.run_id, "content", "extraction_started", {"url": property_url})
             from tools.browser_client import extract_property
@@ -124,6 +129,24 @@ class ContentAgent(BaseAgent):
                     image_url = await asyncio.to_thread(self._upload_image, optimised)
                     bound.info("image_ready", url=image_url)
                     await self.emit(self.run_id, "content", "image_ready", {"url": image_url})
+
+                    # Instagram rejects anything outside 4:5..1.91:1; listing panoramas
+                    # routinely exceed it. Facebook/LinkedIn keep the unpadded original.
+                    padded = await asyncio.to_thread(self._fit_instagram, optimised)
+                    if padded:
+                        ig_image_url = await asyncio.to_thread(
+                            self._upload_image, padded, "property_instagram.jpg"
+                        )
+                        bound.info("instagram_image_padded", url=ig_image_url)
+                        await self.emit(
+                            self.run_id,
+                            "content",
+                            "image_ready",
+                            {
+                                "url": ig_image_url,
+                                "note": "Instagram copy padded to a supported aspect ratio",
+                            },
+                        )
                 except Exception as exc:
                     bound.warning("image_pipeline_failed_continuing", error=str(exc))
                     await self.emit(
@@ -159,7 +182,7 @@ class ContentAgent(BaseAgent):
         await self.emit(self.run_id, "content", "generation_done", usage)
 
         # ── 6. Persist draft_posts (delete-then-insert for idempotency) ────────
-        await asyncio.to_thread(self._save_drafts, drafts, image_url, prompt_version)
+        await asyncio.to_thread(self._save_drafts, drafts, image_url, prompt_version, ig_image_url)
         await self.emit(self.run_id, "content", "drafts_saved", {"platforms": list(drafts.keys())})
 
         if lf_span:
@@ -185,10 +208,30 @@ class ContentAgent(BaseAgent):
 
         return optimize_image(raw)
 
-    def _upload_image(self, image_bytes: bytes) -> str:
+    def _fit_instagram(self, optimised: bytes) -> bytes | None:
+        from tools.image import fit_instagram_aspect
+
+        return fit_instagram_aspect(optimised)
+
+    def _upload_image(self, image_bytes: bytes, filename: str = "property.jpg") -> str:
         from tools.storage import upload_image
 
-        return upload_image(image_bytes, self.run_id)
+        return upload_image(image_bytes, self.run_id, filename)
+
+    def _load_existing_ig_image_url(self) -> str | None:
+        """Instagram's image_url from the current drafts, before they are replaced."""
+        from db.client import get_client
+
+        result = (
+            get_client()
+            .table("draft_posts")
+            .select("image_url")
+            .eq("run_id", self.run_id)
+            .eq("platform", "instagram")
+            .limit(1)
+            .execute()
+        )
+        return result.data[0]["image_url"] if result.data else None
 
     def _load_prompt(self, name: str) -> tuple[str, str]:
         from prompts.loader import load_active_prompt
@@ -215,6 +258,7 @@ class ContentAgent(BaseAgent):
         drafts: dict[str, str],
         image_url: str | None,
         prompt_version: str,
+        ig_image_url: str | None = None,
     ) -> None:
         from db.client import get_client
 
@@ -226,7 +270,10 @@ class ContentAgent(BaseAgent):
                 "run_id": self.run_id,
                 "platform": platform,
                 "generated_content": content,
-                "image_url": image_url,
+                # Instagram points at the aspect-padded copy when one was needed.
+                "image_url": (
+                    ig_image_url if platform == "instagram" and ig_image_url else image_url
+                ),
                 "prompt_version": prompt_version,
             }
             for platform, content in drafts.items()

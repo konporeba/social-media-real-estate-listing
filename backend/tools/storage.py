@@ -7,10 +7,12 @@ import structlog
 log = structlog.get_logger()
 
 
-def upload_image(image_bytes: bytes, run_id: str) -> str:
+def upload_image(image_bytes: bytes, run_id: str, filename: str = "property.jpg") -> str:
     """Upload optimised JPEG bytes to Supabase Storage; return the public HTTPS URL.
 
     The path is deterministic per run so a re-upload on retry overwrites cleanly.
+    `filename` distinguishes per-platform variants within the same run (e.g. the
+    aspect-padded Instagram copy).
     """
     from config import get_settings
     from db.client import get_client
@@ -18,7 +20,7 @@ def upload_image(image_bytes: bytes, run_id: str) -> str:
     settings = get_settings()
     client = get_client()
     bucket = settings.supabase_storage_bucket
-    path = f"runs/{run_id}/property.jpg"
+    path = f"runs/{run_id}/{filename}"
 
     try:
         client.storage.from_(bucket).upload(
